@@ -17,6 +17,7 @@ COPY local-helper/package*.json ./
 RUN npm install --production
 
 COPY local-helper/server.js .
+COPY local-helper/admin.html .
 
 RUN mkdir -p temp
 
