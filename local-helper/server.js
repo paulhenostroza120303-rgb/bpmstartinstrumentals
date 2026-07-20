@@ -424,32 +424,48 @@ async function runYtDlp(args) {
 // ============================================================
 
 async function uploadToMvsep(audioPath, apiKey) {
-  const form = new FormData();
-  const buffer = fs.readFileSync(audioPath);
-  const blob = new Blob([buffer], { type: 'audio/flac' });
-  form.append('audiofile', blob, 'audio.flac');
+  const MAX_RETRIES = 6;
+  const RETRY_WAIT_MS = 30000; // 30 segundos
 
-  const params = new URLSearchParams({
-    api_token: apiKey,
-    sep_type: String(SEP_TYPE),
-    output_format: '2',
-  });
-  const url = `${MVSEP_API_BASE}/separation/create?${params.toString()}`;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const form = new FormData();
+    const buffer = fs.readFileSync(audioPath);
+    const blob = new Blob([buffer], { type: 'audio/flac' });
+    form.append('audiofile', blob, 'audio.flac');
 
-  console.log(`[MVSep-Helper] Subiendo ${(buffer.length / 1024 / 1024).toFixed(2)} MB...`);
+    const params = new URLSearchParams({
+      api_token: apiKey,
+      sep_type: String(SEP_TYPE),
+      output_format: '2',
+    });
+    const url = `${MVSEP_API_BASE}/separation/create?${params.toString()}`;
 
-  const response = await fetch(url, { method: 'POST', body: form });
-  const responseText = await response.text();
-  console.log(`[MVSep-Helper] API (${response.status}):`, responseText.substring(0, 500));
+    console.log(`[MVSep-Helper] Subiendo (${attempt}/${MAX_RETRIES}) ${(buffer.length / 1024 / 1024).toFixed(2)} MB...`);
 
-  if (!response.ok) {
+    const response = await fetch(url, { method: 'POST', body: form });
+    const responseText = await response.text();
+    console.log(`[MVSep-Helper] API (${response.status}):`, responseText.substring(0, 500));
+
+    if (response.ok) {
+      try {
+        return JSON.parse(responseText);
+      } catch (e) {
+        throw new Error(`Respuesta no es JSON: ${responseText.substring(0, 200)}`);
+      }
+    }
+
+    // Verificar si es error de cola (ya hay archivo en proceso)
+    const isQueueError = responseText.includes('unprocessed file in queue') ||
+                         responseText.includes('already have');
+
+    if (isQueueError && attempt < MAX_RETRIES) {
+      const waitSec = RETRY_WAIT_MS / 1000;
+      console.log(`[MVSep-Helper] Cola ocupada. Esperando ${waitSec}s antes de reintentar (${attempt}/${MAX_RETRIES})...`);
+      await sleep(RETRY_WAIT_MS);
+      continue;
+    }
+
     throw new Error(`API error ${response.status}: ${responseText.substring(0, 300)}`);
-  }
-
-  try {
-    return JSON.parse(responseText);
-  } catch (e) {
-    throw new Error(`Respuesta no es JSON: ${responseText.substring(0, 200)}`);
   }
 }
 
