@@ -402,9 +402,19 @@ async function useLocalHelper(youtubeUrl, tabId, session) {
   try {
     const apiKey = await getApiKey();
 
+    // Get auth token
+    const authData = await chrome.storage.sync.get(['auth_token']);
+    const token = authData.auth_token;
+    if (!token) {
+      throw new Error('No has iniciado sesion. Abre el popup de la extension para iniciar sesion.');
+    }
+
     const response = await fetch(`${LOCAL_HELPER_URL}/separate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
       body: JSON.stringify({
         youtubeUrl,
         apiKey,
@@ -413,6 +423,10 @@ async function useLocalHelper(youtubeUrl, tabId, session) {
 
     if (!response.ok) {
       const text = await response.text();
+      if (response.status === 401) {
+        await chrome.storage.sync.remove(['auth_token', 'auth_email']);
+        throw new Error('Sesion expirada. Abre el popup e inicia sesion de nuevo.');
+      }
       throw new Error(`Helper error ${response.status}: ${text}`);
     }
 

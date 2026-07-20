@@ -30,9 +30,7 @@
       line-height: 1.5;
     }
 
-    .container {
-      padding: 16px;
-    }
+    .container { padding: 16px; }
 
     .header {
       display: flex;
@@ -41,11 +39,6 @@
       margin-bottom: 16px;
       padding-bottom: 12px;
       border-bottom: 1px solid var(--border);
-    }
-
-    .header svg {
-      color: var(--accent);
-      flex-shrink: 0;
     }
 
     .header h1 {
@@ -60,9 +53,7 @@
       margin-left: auto;
     }
 
-    .section {
-      margin-bottom: 14px;
-    }
+    .section { margin-bottom: 14px; }
 
     .section-title {
       font-size: 11px;
@@ -73,69 +64,103 @@
       margin-bottom: 6px;
     }
 
-    .api-input-group {
-      display: flex;
-      gap: 6px;
+    .input-group { margin-bottom: 8px; }
+
+    .input-group label {
+      display: block;
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-bottom: 3px;
     }
 
-    .api-input-group input {
-      flex: 1;
+    .input-group input {
+      width: 100%;
       background: var(--bg-secondary);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 8px 10px;
       color: var(--text-primary);
       font-size: 12px;
-      font-family: 'Courier New', monospace;
       outline: none;
       transition: border-color 0.2s;
     }
 
-    .api-input-group input:focus {
-      border-color: var(--accent);
-    }
-
-    .api-input-group input::placeholder {
-      color: #555;
-    }
+    .input-group input:focus { border-color: var(--accent); }
+    .input-group input::placeholder { color: #555; }
 
     .btn {
+      width: 100%;
       background: var(--accent);
       color: white;
       border: none;
       border-radius: var(--radius);
-      padding: 8px 14px;
-      font-size: 12px;
+      padding: 10px 14px;
+      font-size: 13px;
       font-weight: 500;
       cursor: pointer;
       transition: background 0.2s, transform 0.1s;
       white-space: nowrap;
     }
 
-    .btn:hover {
-      background: var(--accent-hover);
-    }
-
-    .btn:active {
-      transform: scale(0.97);
-    }
+    .btn:hover { background: var(--accent-hover); }
+    .btn:active { transform: scale(0.97); }
 
     .btn-secondary {
       background: var(--bg-tertiary);
       color: var(--text-primary);
     }
 
-    .btn-secondary:hover {
-      background: #333;
+    .btn-secondary:hover { background: #333; }
+
+    .btn-small {
+      width: auto;
+      padding: 6px 12px;
+      font-size: 11px;
     }
 
-    .btn-success {
-      background: var(--success);
+    .auth-tabs {
+      display: flex;
+      gap: 0;
+      margin-bottom: 12px;
     }
 
-    .btn-success:hover {
-      background: #27ae60;
+    .auth-tab {
+      flex: 1;
+      padding: 8px;
+      text-align: center;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      transition: all 0.2s;
     }
+
+    .auth-tab:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+    .auth-tab:last-child { border-radius: 0 var(--radius) var(--radius) 0; border-left: none; }
+
+    .auth-tab.active {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+
+    .auth-form { display: none; }
+    .auth-form.active { display: block; }
+
+    .auth-error {
+      background: rgba(255, 68, 68, 0.1);
+      border: 1px solid rgba(255, 68, 68, 0.3);
+      color: var(--accent);
+      padding: 8px 10px;
+      border-radius: var(--radius);
+      font-size: 11px;
+      margin-bottom: 8px;
+      display: none;
+    }
+
+    .auth-error.show { display: block; }
 
     .status-bar {
       background: var(--bg-secondary);
@@ -161,9 +186,7 @@
       animation: pulse 2s infinite;
     }
 
-    .status-dot.error {
-      background: var(--accent);
-    }
+    .status-dot.error { background: var(--accent); }
 
     .status-dot.processing {
       background: #f39c12;
@@ -175,14 +198,8 @@
       50% { opacity: 0.5; }
     }
 
-    .status-text {
-      font-size: 12px;
-      color: var(--text-secondary);
-    }
-
-    .status-text strong {
-      color: var(--text-primary);
-    }
+    .status-text { font-size: 12px; color: var(--text-secondary); }
+    .status-text strong { color: var(--text-primary); }
 
     .shortcuts {
       background: var(--bg-secondary);
@@ -226,9 +243,7 @@
       font-size: 11px;
     }
 
-    .footer a:hover {
-      color: var(--accent);
-    }
+    .footer a:hover { color: var(--accent); }
 
     .toast {
       position: fixed;
@@ -250,75 +265,145 @@
       transform: translateX(-50%) translateY(0);
     }
 
+    .toast.error { background: var(--accent); }
+
     .status-detail {
       margin-top: 8px;
       font-size: 11px;
       color: var(--text-secondary);
     }
 
-    .status-detail.error-text {
-      color: var(--accent);
+    .status-detail.error-text { color: var(--accent); }
+
+    .user-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--bg-secondary);
+      border-radius: var(--radius);
+      padding: 8px 12px;
+      margin-bottom: 14px;
     }
+
+    .user-email {
+      font-size: 12px;
+      color: var(--text-secondary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 200px;
+    }
+
+    .hidden { display: none !important; }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="header">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent);">
         <path d="M9 18V5l12-2v13"/>
         <circle cx="6" cy="18" r="3"/>
         <circle cx="18" cy="16" r="3"/>
       </svg>
       <h1>BPMSTART</h1>
-      <span class="version">v1.0.0</span>
+      <span class="version">v4.0.0</span>
     </div>
 
-    <!-- Estado actual -->
-    <div class="section">
-      <div class="section-title">Estado</div>
-      <div class="status-bar">
-        <span class="status-dot" id="status-dot"></span>
-        <div>
-          <span class="status-text" id="status-text">
-            <strong>Inactivo</strong> — Abre YouTube para empezar
-          </span>
-          <div class="status-detail" id="status-detail"></div>
+    <!-- AUTH VIEW -->
+    <div id="auth-view">
+      <div class="auth-tabs">
+        <div class="auth-tab active" id="tab-login">Iniciar Sesion</div>
+        <div class="auth-tab" id="tab-register">Registrarse</div>
+      </div>
+
+      <div class="auth-error" id="auth-error"></div>
+
+      <!-- Login Form -->
+      <div class="auth-form active" id="form-login">
+        <div class="input-group">
+          <label>Email</label>
+          <input type="email" id="login-email" placeholder="tu@email.com" autocomplete="email">
         </div>
+        <div class="input-group">
+          <label>Password</label>
+          <input type="password" id="login-password" placeholder="Tu password" autocomplete="current-password">
+        </div>
+        <button class="btn" id="btn-login">Iniciar Sesion</button>
+      </div>
+
+      <!-- Register Form -->
+      <div class="auth-form" id="form-register">
+        <div class="input-group">
+          <label>Email</label>
+          <input type="email" id="register-email" placeholder="tu@email.com" autocomplete="email">
+        </div>
+        <div class="input-group">
+          <label>Password (minimo 6 caracteres)</label>
+          <input type="password" id="register-password" placeholder="Tu password" autocomplete="new-password">
+        </div>
+        <div class="input-group">
+          <label>Confirmar Password</label>
+          <input type="password" id="register-confirm" placeholder="Repite tu password" autocomplete="new-password">
+        </div>
+        <button class="btn" id="btn-register">Crear Cuenta</button>
       </div>
     </div>
 
-    <!-- API Key -->
-    <div class="section">
-      <div class="section-title">API Key de mvsep.com</div>
-      <div class="api-input-group">
-        <input type="password" id="api-key-input" placeholder="Ingresa tu API key..." spellcheck="false">
-        <button class="btn" id="btn-save-key">Guardar</button>
+    <!-- APP VIEW (hidden until logged in) -->
+    <div id="app-view" class="hidden">
+      <!-- User bar -->
+      <div class="user-bar">
+        <span class="user-email" id="user-email"></span>
+        <button class="btn btn-secondary btn-small" id="btn-logout">Salir</button>
       </div>
-    </div>
 
-    <!-- Atajos -->
-    <div class="section">
-      <div class="section-title">Atajos de Teclado</div>
-      <div class="shortcuts">
-        <div class="shortcut-item">
-          <span class="desc">Abrir / Cerrar panel</span>
-          <span class="key">Ctrl+Shift+S</span>
-        </div>
-        <div class="shortcut-item">
-          <span class="desc">Separar audio</span>
-          <span class="key">Desde el panel</span>
+      <!-- Estado actual -->
+      <div class="section">
+        <div class="section-title">Estado</div>
+        <div class="status-bar">
+          <span class="status-dot" id="status-dot"></span>
+          <div>
+            <span class="status-text" id="status-text">
+              <strong>Inactivo</strong> — Abre YouTube para empezar
+            </span>
+            <div class="status-detail" id="status-detail"></div>
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- Footer -->
-    <div class="footer">
-      <a href="https://mvsep.com" target="_blank">mvsep.com</a>
-      <a href="#" id="btn-reset">Restablecer</a>
+      <!-- API Key -->
+      <div class="section">
+        <div class="section-title">API Key de mvsep.com</div>
+        <div class="input-group">
+          <input type="password" id="api-key-input" placeholder="Ingresa tu API key..." spellcheck="false">
+        </div>
+        <button class="btn btn-secondary" id="btn-save-key" style="width:100%">Guardar API Key</button>
+      </div>
+
+      <!-- Atajos -->
+      <div class="section">
+        <div class="section-title">Atajos de Teclado</div>
+        <div class="shortcuts">
+          <div class="shortcut-item">
+            <span class="desc">Abrir / Cerrar panel</span>
+            <span class="key">Ctrl+Shift+S</span>
+          </div>
+          <div class="shortcut-item">
+            <span class="desc">Separar audio</span>
+            <span class="key">Desde el panel</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="footer">
+        <a href="https://mvsep.com" target="_blank">mvsep.com</a>
+        <a href="#" id="btn-reset">Restablecer</a>
+      </div>
     </div>
   </div>
 
-  <div class="toast" id="toast">✓ API key guardada</div>
+  <div class="toast" id="toast"></div>
 
   <script src="popup.js"></script>
 </body>

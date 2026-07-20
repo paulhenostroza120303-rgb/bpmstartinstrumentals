@@ -3,6 +3,8 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 const PORT = process.env.PORT || 3456;
 const MVSEP_API_BASE = 'https://de.mvsep.com/api';
@@ -12,9 +14,50 @@ const POLL_INTERVAL_MS = 3000;
 const MAX_POLL_ATTEMPTS = 120;
 const TEMP_DIR = path.join(__dirname, 'temp');
 const COOKIES_PATH = path.join(__dirname, 'cookies.txt');
+const JWT_SECRET = process.env.JWT_SECRET || 'bpmstart_secret_change_me_2026';
+const USERS_FILE = path.join(__dirname, 'users.json');
 
 if (!fs.existsSync(TEMP_DIR)) {
   fs.mkdirSync(TEMP_DIR, { recursive: true });
+}
+
+// ============================================================
+// USERS DATABASE (JSON file)
+// ============================================================
+
+function loadUsers() {
+  try {
+    if (fs.existsSync(USERS_FILE)) {
+      return JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+    }
+  } catch (e) {
+    console.error('[Auth] Error loading users:', e.message);
+  }
+  return [];
+}
+
+function saveUsers(users) {
+  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf8');
+}
+
+// ============================================================
+// AUTH MIDDLEWARE
+// ============================================================
+
+function authMiddleware(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ success: false, error: 'Token de autenticacion requerido' });
+  }
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (e) {
+    return res.status(401).json({ success: false, error: 'Token invalido o expirado' });
+  }
 }
 
 // Write cookies from env var if provided
@@ -31,10 +74,86 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
 app.get('/ping', (req, res) => {
-  res.json({ status: 'ok', version: '3.0.0', source: 'yt-dlp+cookies' });
+  res.json({ status: 'ok', version: '4.0.0', source: 'yt-dlp+cookies', auth: true });
 });
 
-app.post('/separate', async (req, res) => {
+// ============================================================
+// AUTH ENDPOINTS
+// ============================================================
+
+app.post('/register', async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ success: false, error: 'Email y password requeridos' });
+  }
+
+  if (password.length < 6) {
+    return res.status(400).json({ success: false, error: 'Password minimo 6 caracteres' });
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return res.status(400).json({ success: false, error: 'Email invalido' });
+  }
+
+  const users = loadUsers();
+  const existing = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+  if (existing) {
+    return res.status(409).json({ success: false, error: 'Este email ya esta registrado' });
+  }
+
+  const hash = await bcrypt.hash(password, 10);
+  const user = {
+    id: Date.now().toString(36) + Math.random().toString(36).substring(2, 8),
+    email: email.toLowerCase(),
+    password: hash,
+    createdAt: new Date().toISOString(),
+  };
+
+  users.push(user);
+  saveUsers(users);
+
+  const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '30d' });
+
+  console.log(`[Auth] Nuevo usuario registrado: ${user.email}`);
+  res.json({ success: true, token, email: user.email });
+});
+
+app.post('/login', async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ success: false, error: 'Email y password requeridos' });
+  }
+
+  const users = loadUsers();
+  const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+
+  if (!user) {
+    return res.status(401).json({ success: false, error: 'Email o password incorrecto' });
+  }
+
+  const valid = await bcrypt.compare(password, user.password);
+  if (!valid) {
+    return res.status(401).json({ success: false, error: 'Email o password incorrecto' });
+  }
+
+  const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '30d' });
+
+  console.log(`[Auth] Login exitoso: ${user.email}`);
+  res.json({ success: true, token, email: user.email });
+});
+
+app.get('/verify', authMiddleware, (req, res) => {
+  res.json({ success: true, email: req.user.email });
+});
+
+// ============================================================
+// SEPARATE (protegido con auth)
+// ============================================================
+
+app.post('/separate', authMiddleware, async (req, res) => {
   const { youtubeUrl, apiKey } = req.body;
 
   if (!youtubeUrl) {
@@ -313,12 +432,14 @@ function sleep(ms) {
 app.listen(PORT, () => {
   console.log('');
   console.log('╔══════════════════════════════════════════════╗');
-  console.log('║       MVSep - Helper Server (yt-dlp)        ║');
+  console.log('║       MVSep - Helper Server v4.0.0          ║');
   console.log('╠══════════════════════════════════════════════╣');
   console.log(`║  Puerto: ${PORT}                              ║`);
-  console.log('║  Endpoint: POST /separate                    ║');
+  console.log('║  Auth: /register, /login, /verify            ║');
+  console.log('║  API:   POST /separate (requiere token)      ║');
   console.log(`║  Cookies: ${YOUTUBE_COOKIES ? 'SI' : 'NO'}                                 ║`);
   console.log('╚══════════════════════════════════════════════╝');
   console.log('');
-  console.log('[MVSep-Helper] Servidor listo!');
+  const users = loadUsers();
+  console.log(`[MVSep-Helper] Servidor listo! ${users.length} usuarios registrados.`);
 });
