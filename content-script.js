@@ -28,6 +28,73 @@ let waveformBuffer = null;
 let audioCtx = null;
 
 // ============================================================
+// DRAG
+// ============================================================
+
+let dragState = { active: false, offsetX: 0, offsetY: 0 };
+
+function initDrag() {
+  if (!panel) return;
+  const header = panel.querySelector('.mvsep-header');
+  if (!header) return;
+  header.style.cursor = 'grab';
+
+  header.addEventListener('mousedown', (e) => {
+    if (e.target.closest('.mvsep-btn-icon')) return;
+    e.preventDefault();
+    const rect = panel.getBoundingClientRect();
+    dragState.active = true;
+    dragState.offsetX = e.clientX - rect.left;
+    dragState.offsetY = e.clientY - rect.top;
+    panel.classList.add('mvsep-dragging');
+    header.style.cursor = 'grabbing';
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!dragState.active) return;
+    const w = panel.offsetWidth;
+    const h = panel.offsetHeight;
+    let x = e.clientX - dragState.offsetX;
+    let y = e.clientY - dragState.offsetY;
+    x = Math.max(0, Math.min(x, window.innerWidth - w));
+    y = Math.max(0, Math.min(y, window.innerHeight - h));
+    panel.style.left = x + 'px';
+    panel.style.top = y + 'px';
+    panel.style.right = 'auto';
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragState.active) return;
+    dragState.active = false;
+    panel.classList.remove('mvsep-dragging');
+    const header = panel.querySelector('.mvsep-header');
+    if (header) header.style.cursor = 'grab';
+    savePanelPosition();
+  });
+}
+
+function savePanelPosition() {
+  if (!panel) return;
+  const rect = panel.getBoundingClientRect();
+  try {
+    localStorage.setItem('mvsep_panel_pos', JSON.stringify({ left: rect.left, top: rect.top }));
+  } catch (e) { /* ignore */ }
+}
+
+function restorePanelPosition() {
+  if (!panel) return;
+  try {
+    const saved = localStorage.getItem('mvsep_panel_pos');
+    if (saved) {
+      const pos = JSON.parse(saved);
+      panel.style.left = pos.left + 'px';
+      panel.style.top = pos.top + 'px';
+      panel.style.right = 'auto';
+    }
+  } catch (e) { /* ignore */ }
+}
+
+// ============================================================
 // STEM MODEL
 // ============================================================
 
@@ -190,6 +257,18 @@ function createPanel() {
         </button>
       </div>
     </div>
+
+    <div class="mvsep-history-section" id="mvsep-history-section">
+      <div class="mvsep-history-header">
+        <span>Historial</span>
+        <button class="mvsep-btn-icon" id="mvsep-history-toggle" title="Limpiar historial">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+          </svg>
+        </button>
+      </div>
+      <div class="mvsep-history-list" id="mvsep-history-list"></div>
+    </div>
   `;
 
   document.body.appendChild(panel);
@@ -197,6 +276,9 @@ function createPanel() {
   waveformCtx = waveformCanvas?.getContext('2d');
   setupEventListeners();
   renderMixer();
+  initDrag();
+  restorePanelPosition();
+  renderHistory();
 }
 
 // ============================================================
@@ -447,6 +529,7 @@ function setupEventListeners() {
   panel.querySelector('#mvsep-btn-stop')?.addEventListener('click', stopRecording);
   panel.querySelector('#mvsep-close-panel')?.addEventListener('click', hidePanel);
   panel.querySelector('#mvsep-toggle-pin')?.addEventListener('click', togglePin);
+  panel.querySelector('#mvsep-history-toggle')?.addEventListener('click', clearHistory);
 
   panel.querySelector('#mvsep-play-btn')?.addEventListener('click', togglePlay);
 
@@ -860,10 +943,183 @@ async function handleSeparationComplete(message) {
     }
 
     setupMixerAudio();
+    saveToHistory();
 
   } catch (err) {
     console.error('[BPMSTART] Error:', err);
     setState('error', 'Error de comunicacion: ' + err.message);
+  }
+}
+
+// ============================================================
+// HISTORIAL (IndexedDB + chrome.storage.local)
+// ============================================================
+
+const DB_NAME = 'bpmstart_db';
+const STORE_NAME = 'stem_audio';
+let dbInstance = null;
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    if (dbInstance) return resolve(dbInstance);
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME);
+      }
+    };
+    req.onsuccess = () => { dbInstance = req.result; resolve(dbInstance); };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbPut(key, value) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).put(value, key);
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function idbGet(key) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const req = tx.objectStore(STORE_NAME).get(key);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbDelete(key) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).delete(key);
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function saveToHistory() {
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    const videoId = urlParams.get('v') || '';
+    const title = document.title.replace(' - YouTube', '').trim() || 'Unknown';
+    const thumb = videoId ? `https://img.youtube.com/vi/${videoId}/default.jpg` : '';
+    const jobId = 'h_' + Date.now();
+    const stemsInfo = stems.filter(s => s.buffer).map(s => s.id);
+
+    await idbPut(`${jobId}_meta`, { videoId, title, thumb, date: Date.now(), stems: stemsInfo });
+    for (const s of stems) {
+      if (s.buffer) await idbPut(`${jobId}_${s.id}`, s.buffer);
+    }
+
+    const stored = await chrome.storage.local.get(['history']);
+    const history = stored.history || [];
+    history.unshift({ jobId, videoId, title, thumb, date: Date.now(), stems: stemsInfo });
+    if (history.length > 20) {
+      const removed = history.splice(20);
+      for (const item of removed) {
+        for (const s of (item.stems || [])) await idbDelete(`${item.jobId}_${s}`).catch(() => {});
+        await idbDelete(`${item.jobId}_meta`).catch(() => {});
+      }
+    }
+    await chrome.storage.local.set({ history });
+    renderHistory();
+    console.log('[BPMSTART] Guardado en historial:', title);
+  } catch (e) {
+    console.warn('[BPMSTART] Error guardando historial:', e);
+  }
+}
+
+async function renderHistory() {
+  const list = panel?.querySelector('#mvsep-history-list');
+  if (!list) return;
+
+  try {
+    const stored = await chrome.storage.local.get(['history']);
+    const history = stored.history || [];
+    list.innerHTML = '';
+
+    if (history.length === 0) {
+      list.innerHTML = '<div class="mvsep-history-empty">Sin separaciones previas</div>';
+      return;
+    }
+
+    for (const item of history) {
+      const el = document.createElement('div');
+      el.className = 'mvsep-history-item';
+      el.dataset.jobId = item.jobId;
+      const dateStr = new Date(item.date).toLocaleDateString('es', { day: 'numeric', month: 'short' });
+      el.innerHTML = `
+        <div class="mvsep-history-thumb">${item.thumb ? `<img src="${item.thumb}">` : '<div class="mvsep-history-nothumb">🎵</div>'}</div>
+        <div class="mvsep-history-info">
+          <div class="mvsep-history-title">${escapeHtml(item.title)}</div>
+          <div class="mvsep-history-meta">${dateStr} · ${item.stems.length} stems</div>
+        </div>
+      `;
+      el.addEventListener('click', () => loadFromHistory(item.jobId));
+      list.appendChild(el);
+    }
+  } catch (e) {
+    console.warn('[BPMSTART] Error renderizando historial:', e);
+  }
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+async function loadFromHistory(jobId) {
+  try {
+    const meta = await idbGet(`${jobId}_meta`);
+    if (!meta) { console.warn('[BPMSTART] No encontrado:', jobId); return; }
+
+    stopPlayback();
+    stems.forEach(s => { s.buffer = null; s.audio = null; });
+
+    for (const stemId of meta.stems) {
+      const buf = await idbGet(`${jobId}_${stemId}`);
+      if (buf) {
+        const stem = getStem(stemId);
+        if (stem) stem.buffer = buf;
+      }
+    }
+
+    if (!stems.some(s => s.buffer)) {
+      setState('error', 'Audio no disponible en cache');
+      return;
+    }
+
+    setState('complete', 'Cargado del historial');
+    setupMixerAudio();
+    showPanel();
+    console.log('[BPMSTART] Cargado del historial:', meta.title);
+  } catch (e) {
+    console.error('[BPMSTART] Error cargando historial:', e);
+    setState('error', 'Error al cargar historial');
+  }
+}
+
+async function clearHistory() {
+  try {
+    const stored = await chrome.storage.local.get(['history']);
+    const history = stored.history || [];
+    for (const item of history) {
+      for (const s of (item.stems || [])) await idbDelete(`${item.jobId}_${s}`).catch(() => {});
+      await idbDelete(`${item.jobId}_meta`).catch(() => {});
+    }
+    await chrome.storage.local.set({ history: [] });
+    renderHistory();
+    console.log('[BPMSTART] Historial limpiado');
+  } catch (e) {
+    console.warn('[BPMSTART] Error limpiando historial:', e);
   }
 }
 
