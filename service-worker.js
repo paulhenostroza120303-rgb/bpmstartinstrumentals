@@ -141,11 +141,11 @@ async function handleStartSeparation(message, sender) {
 
     // 1. Obtener stream ID para capturar audio
     const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tabId });
-    session.status = 'recording';
+    session.status = 'processing';
 
     notifyContentScript(tabId, {
       type: 'STATUS_UPDATE',
-      status: 'recording',
+      status: 'processing',
       message: 'Grabando audio...',
     });
 
@@ -162,10 +162,10 @@ async function handleStartSeparation(message, sender) {
       throw new Error('Error al grabar audio: ' + (recordingResult.error || 'desconocido'));
     }
 
-    session.status = 'uploading';
+    session.status = 'processing';
     notifyContentScript(tabId, {
       type: 'STATUS_UPDATE',
-      status: 'uploading',
+      status: 'processing',
       message: 'Subiendo a mvsep.com...',
     });
 
@@ -196,10 +196,10 @@ async function handleStartSeparation(message, sender) {
       throw new Error('Error en la separación: ' + (pollResult.error || 'desconocido'));
     }
 
-    session.status = 'downloading';
+    session.status = 'processing';
     notifyContentScript(tabId, {
       type: 'STATUS_UPDATE',
-      status: 'downloading',
+      status: 'processing',
       message: 'Descargando resultados...',
     });
 
@@ -240,7 +240,7 @@ async function handleStartSeparation(message, sender) {
     setTimeout(() => {
       let hasActive = false;
       for (const [, s] of sessions) {
-        if (s.status === 'recording' || s.status === 'uploading' || s.status === 'processing') {
+        if (s.status === 'processing' || s.status === 'initializing') {
           hasActive = true;
           break;
         }

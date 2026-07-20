@@ -249,14 +249,8 @@ async function updateStatus() {
 
       if (response.status === 'idle' || !response.status) {
         setStatus('inactive', 'En YouTube — Listo para separar', '');
-      } else if (response.status === 'recording') {
-        setStatus('processing', 'Grabando audio...', '');
-      } else if (response.status === 'uploading') {
-        setStatus('processing', 'Subiendo a mvsep.com...', '');
-      } else if (response.status === 'processing') {
-        setStatus('processing', 'Procesando separacion...', `Progreso: ${Math.round(response.progress || 0)}%`);
-      } else if (response.status === 'downloading') {
-        setStatus('processing', 'Descargando resultados...', '');
+      } else if (response.status === 'processing' || response.status === 'initializing') {
+        setStatus('processing', 'Procesando...', response.message || `Progreso: ${Math.round(response.progress || 0)}%`);
       } else if (response.status === 'complete') {
         setStatus('active', 'Separacion completada!', 'Cambia entre Original/Instrumental/Vocal en el panel');
       } else if (response.status === 'error') {

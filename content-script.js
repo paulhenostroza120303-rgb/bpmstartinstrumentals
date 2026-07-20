@@ -110,35 +110,17 @@ function createPanel() {
         </button>
       </div>
 
-      <div class="mvsep-state mvsep-state-recording mvsep-hidden">
-        <div class="mvsep-recording-indicator">
-          <span class="mvsep-recording-dot"></span>
-          <span class="mvsep-recording-text">Procesando...</span>
-        </div>
-        <div class="mvsep-timer" id="mvsep-timer">00:00</div>
-        <button class="mvsep-btn-secondary mvsep-btn-stop" id="mvsep-btn-stop">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12"/></svg>
-          Detener
-        </button>
-      </div>
-
-      <div class="mvsep-state mvsep-state-uploading mvsep-hidden">
-        <div class="mvsep-spinner"></div>
-        <span class="mvsep-status-text">Subiendo a mvsep.com...</span>
-      </div>
-
       <div class="mvsep-state mvsep-state-processing mvsep-hidden">
         <div class="mvsep-spinner"></div>
-        <span class="mvsep-status-text" id="mvsep-processing-text">Procesando...</span>
+        <span class="mvsep-status-text" id="mvsep-processing-text">Conectando...</span>
         <div class="mvsep-progress-bar">
           <div class="mvsep-progress-fill" id="mvsep-progress-fill"></div>
         </div>
         <span class="mvsep-progress-text" id="mvsep-progress-text">0%</span>
-      </div>
-
-      <div class="mvsep-state mvsep-state-downloading mvsep-hidden">
-        <div class="mvsep-spinner"></div>
-        <span class="mvsep-status-text">Descargando resultados...</span>
+        <button class="mvsep-btn-secondary mvsep-btn-stop" id="mvsep-btn-stop">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12"/></svg>
+          Cancelar
+        </button>
       </div>
 
       <div class="mvsep-state mvsep-state-complete mvsep-hidden">
@@ -539,10 +521,8 @@ function updateUI() {
 
   const stateMap = {
     idle: '.mvsep-state-idle',
-    recording: '.mvsep-state-recording',
-    uploading: '.mvsep-state-uploading',
+    initializing: '.mvsep-state-processing',
     processing: '.mvsep-state-processing',
-    downloading: '.mvsep-state-downloading',
     complete: '.mvsep-state-complete',
     error: '.mvsep-state-error',
     cancelled: '.mvsep-state-cancelled',
@@ -559,9 +539,11 @@ function updateUI() {
     errorText.textContent = state.message || 'Error desconocido';
   }
 
-  const processingText = panel.querySelector('#mvsep-processing-text');
-  if (processingText) {
-    processingText.textContent = state.message || 'Procesando...';
+  if (state.status === 'processing' || state.status === 'initializing') {
+    const processingText = panel.querySelector('#mvsep-processing-text');
+    if (processingText) {
+      processingText.textContent = state.message || 'Procesando...';
+    }
   }
 
   const progressFill = panel.querySelector('#mvsep-progress-fill');
@@ -578,8 +560,7 @@ function setState(status, message = '', progress = 0) {
   state.message = message;
   state.progress = progress;
 
-  if (status === 'recording') showPanel();
-  if (status === 'complete' || status === 'error' || status === 'cancelled') stopTimer();
+  if (status === 'processing' || status === 'initializing') showPanel();
 
   updateUI();
 }
@@ -777,8 +758,7 @@ async function startSeparation() {
   const urlParams = new URLSearchParams(window.location.search);
   const videoId = urlParams.get('v');
 
-  setState('recording', 'Conectando...');
-  startTimer();
+  setState('initializing', 'Conectando...');
 
   chrome.runtime.sendMessage({
     type: 'START_SEPARATION',
@@ -797,29 +777,6 @@ async function startSeparation() {
 function stopRecording() {
   chrome.runtime.sendMessage({ type: 'CANCEL_SEPARATION' });
   setState('cancelled', 'Cancelado');
-  stopTimer();
-}
-
-// ============================================================
-// TIMER
-// ============================================================
-
-let timerInterval = null;
-let timerStart = 0;
-
-function startTimer() {
-  timerStart = Date.now();
-  const timerEl = panel?.querySelector('#mvsep-timer');
-  if (timerEl) {
-    timerInterval = setInterval(() => {
-      const elapsed = Math.floor((Date.now() - timerStart) / 1000);
-      timerEl.textContent = `${String(Math.floor(elapsed / 60)).padStart(2, '0')}:${String(elapsed % 60).padStart(2, '0')}`;
-    }, 200);
-  }
-}
-
-function stopTimer() {
-  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
 }
 
 // ============================================================
