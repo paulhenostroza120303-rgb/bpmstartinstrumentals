@@ -377,6 +377,51 @@ async function closeOffscreenDocument() {
 }
 
 // ============================================================
+// YOUTUBE COOKIES (extraidas del browser del usuario)
+// ============================================================
+
+async function getYouTubeCookies() {
+  try {
+    const cookies = await chrome.cookies.getAll({ domain: '.youtube.com' });
+    if (!cookies || cookies.length === 0) return null;
+
+    const relevantCookies = cookies.filter(c =>
+      c.name.startsWith('__Secure-') ||
+      c.name.startsWith('__Host-') ||
+      c.name === 'VISITOR_INFO1_LIVE' ||
+      c.name === 'LOGIN_INFO' ||
+      c.name === 'SID' ||
+      c.name === 'HSID' ||
+      c.name === 'SSID' ||
+      c.name === 'APISID' ||
+      c.name === 'SAPISID' ||
+      c.name === 'SAMESITE__2' ||
+      c.name === 'PREF' ||
+      c.name === 'GEUI' ||
+      c.name === 'CONSENT'
+    );
+
+    if (relevantCookies.length === 0) return null;
+
+    let netscape = '# Netscape HTTP Cookie File\n';
+    for (const c of relevantCookies) {
+      const domain = c.domain.startsWith('.') ? c.domain : '.' + c.domain;
+      const flag = 'TRUE';
+      const path = c.path || '/';
+      const secure = c.secure ? 'TRUE' : 'FALSE';
+      const expires = c.expirationDate ? Math.floor(c.expirationDate) : 0;
+      netscape += `${domain}\t${flag}\t${path}\t${secure}\t${expires}\t${c.name}\t${c.value}\n`;
+    }
+
+    console.log(`[MVSep] Extraidas ${relevantCookies.length} cookies de YouTube`);
+    return netscape;
+  } catch (e) {
+    console.warn('[MVSep] Error extrayendo cookies:', e.message);
+    return null;
+  }
+}
+
+// ============================================================
 // HELPER LOCAL (ytdl-core en localhost:3456)
 // ============================================================
 
@@ -407,15 +452,18 @@ async function useLocalHelper(youtubeUrl, tabId, session) {
       throw new Error('No has iniciado sesion. Abre el popup de la extension para iniciar sesion.');
     }
 
+    const cookies = await getYouTubeCookies();
+
+    const body = { youtubeUrl };
+    if (cookies) body.cookies = cookies;
+
     const response = await fetch(`${LOCAL_HELPER_URL}/separate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
       },
-      body: JSON.stringify({
-        youtubeUrl,
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {

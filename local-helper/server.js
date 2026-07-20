@@ -305,7 +305,7 @@ app.post('/separate', authMiddleware, async (req, res) => {
     });
   }
 
-  const { youtubeUrl } = req.body;
+  const { youtubeUrl, cookies: requestCookies } = req.body;
 
   if (!youtubeUrl) {
     return res.status(400).json({ success: false, error: 'Falta youtubeUrl' });
@@ -316,10 +316,19 @@ app.post('/separate', authMiddleware, async (req, res) => {
   const jobId = 'mvsep_' + Date.now();
   const audioPath = path.join(TEMP_DIR, `${jobId}.mp3`);
 
+  let requestCookiesPath = null;
+  if (requestCookies) {
+    requestCookiesPath = path.join(TEMP_DIR, `${jobId}_cookies.txt`);
+    fs.writeFileSync(requestCookiesPath, requestCookies, 'utf8');
+    console.log(`[MVSep-Helper] Cookies del browser: ${requestCookies.split('\n').filter(l => l.trim() && !l.startsWith('#')).length} cookies`);
+  }
+
+  const cookiesPathToUse = requestCookiesPath || (YOUTUBE_COOKIES ? COOKIES_PATH : null);
+
   try {
     console.log(`[MVSep-Helper] Obteniendo info...`);
     const infoArgs = ['--dump-json', '--no-playlist'];
-    if (YOUTUBE_COOKIES) infoArgs.push('--cookies', COOKIES_PATH);
+    if (cookiesPathToUse) infoArgs.push('--cookies', cookiesPathToUse);
     infoArgs.push(youtubeUrl);
 
     const infoJson = await runYtDlp(infoArgs);
@@ -340,7 +349,7 @@ app.post('/separate', authMiddleware, async (req, res) => {
       '-x', '--audio-format', 'mp3', '--audio-quality', '0',
       '-o', audioPath, '--no-playlist', '--no-progress',
     ];
-    if (YOUTUBE_COOKIES) dlArgs.push('--cookies', COOKIES_PATH);
+    if (cookiesPathToUse) dlArgs.push('--cookies', cookiesPathToUse);
     dlArgs.push(youtubeUrl);
 
     await runYtDlp(dlArgs);
@@ -388,8 +397,11 @@ app.post('/separate', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error(`[MVSep-Helper] Error:`, error.message);
     try { if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath); } catch (e) { /* ignore */ }
+    if (requestCookiesPath) try { if (fs.existsSync(requestCookiesPath)) fs.unlinkSync(requestCookiesPath); } catch (e) { /* ignore */ }
     res.status(500).json({ success: false, error: error.message });
   }
+
+  if (requestCookiesPath) try { if (fs.existsSync(requestCookiesPath)) fs.unlinkSync(requestCookiesPath); } catch (e) { /* ignore */ }
 });
 
 // ============================================================
