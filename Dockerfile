@@ -10,10 +10,10 @@ RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
 
 WORKDIR /app
 
-COPY package*.json ./
+COPY local-helper/package*.json ./
 RUN npm install --production
 
-COPY server.js .
+COPY local-helper/server.js .
 
 RUN mkdir -p temp
 
