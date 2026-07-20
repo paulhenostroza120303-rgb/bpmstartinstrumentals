@@ -5,6 +5,7 @@ const path = require('path');
 const { execFile } = require('child_process');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { Pool } = require('pg');
 
 const PORT = process.env.PORT || 3456;
 const MVSEP_API_BASE = 'https://de.mvsep.com/api';
@@ -16,29 +17,28 @@ const TEMP_DIR = path.join(__dirname, 'temp');
 const COOKIES_PATH = path.join(__dirname, 'cookies.txt');
 const JWT_SECRET = process.env.JWT_SECRET || 'bpmstart_secret_change_me_2026';
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || '').toLowerCase();
-const USERS_FILE = path.join(__dirname, 'users.json');
-
-if (!fs.existsSync(TEMP_DIR)) {
-  fs.mkdirSync(TEMP_DIR, { recursive: true });
-}
 
 // ============================================================
-// USERS DATABASE
+// POSTGRESQL
 // ============================================================
 
-function loadUsers() {
-  try {
-    if (fs.existsSync(USERS_FILE)) {
-      return JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-    }
-  } catch (e) {
-    console.error('[Auth] Error loading users:', e.message);
-  }
-  return [];
-}
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL?.includes('railway') ? { rejectUnauthorized: false } : false,
+});
 
-function saveUsers(users) {
-  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf8');
+async function initDB() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL,
+      password TEXT NOT NULL,
+      approved BOOLEAN DEFAULT FALSE,
+      admin BOOLEAN DEFAULT FALSE,
+      created_at TEXT DEFAULT NOW()::TEXT
+    )
+  `);
+  console.log('[DB] Tabla users inicializada');
 }
 
 function isAdmin(email) {
@@ -109,35 +109,25 @@ app.post('/register', async (req, res) => {
     return res.status(400).json({ success: false, error: 'Email invalido' });
   }
 
-  const users = loadUsers();
-  const existing = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-  if (existing) {
+  const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email.toLowerCase()]);
+  if (existing.rows.length > 0) {
     return res.status(409).json({ success: false, error: 'Este email ya esta registrado' });
   }
 
   const hash = await bcrypt.hash(password, 10);
-  const user = {
-    id: Date.now().toString(36) + Math.random().toString(36).substring(2, 8),
-    email: email.toLowerCase(),
-    password: hash,
-    approved: isAdmin(email),
-    admin: isAdmin(email),
-    createdAt: new Date().toISOString(),
-  };
+  const id = Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
+  const userAdmin = isAdmin(email);
+  const approved = userAdmin;
 
-  users.push(user);
-  saveUsers(users);
+  await pool.query(
+    'INSERT INTO users (id, email, password, approved, admin) VALUES ($1, $2, $3, $4, $5)',
+    [id, email.toLowerCase(), hash, approved, userAdmin]
+  );
 
-  const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '30d' });
+  const token = jwt.sign({ id, email: email.toLowerCase() }, JWT_SECRET, { expiresIn: '30d' });
 
-  console.log(`[Auth] Nuevo usuario: ${user.email} (approved: ${user.approved}, admin: ${user.admin})`);
-  res.json({
-    success: true,
-    token,
-    email: user.email,
-    approved: user.approved,
-    admin: user.admin,
-  });
+  console.log(`[Auth] Nuevo usuario: ${email.toLowerCase()} (approved: ${approved}, admin: ${userAdmin})`);
+  res.json({ success: true, token, email: email.toLowerCase(), approved, admin: userAdmin });
 });
 
 app.post('/login', async (req, res) => {
@@ -147,8 +137,8 @@ app.post('/login', async (req, res) => {
     return res.status(400).json({ success: false, error: 'Email y password requeridos' });
   }
 
-  const users = loadUsers();
-  const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+  const result = await pool.query('SELECT * FROM users WHERE email = $1', [email.toLowerCase()]);
+  const user = result.rows[0];
 
   if (!user) {
     return res.status(401).json({ success: false, error: 'Email o password incorrecto' });
@@ -171,9 +161,9 @@ app.post('/login', async (req, res) => {
   });
 });
 
-app.get('/verify', authMiddleware, (req, res) => {
-  const users = loadUsers();
-  const user = users.find(u => u.email === req.user.email);
+app.get('/verify', authMiddleware, async (req, res) => {
+  const result = await pool.query('SELECT * FROM users WHERE email = $1', [req.user.email]);
+  const user = result.rows[0];
   res.json({
     success: true,
     email: req.user.email,
@@ -186,61 +176,53 @@ app.get('/verify', authMiddleware, (req, res) => {
 // ADMIN ENDPOINTS
 // ============================================================
 
-app.get('/admin/users', authMiddleware, adminMiddleware, (req, res) => {
-  const users = loadUsers();
-  const list = users.map(u => ({
+app.get('/admin/users', authMiddleware, adminMiddleware, async (req, res) => {
+  const result = await pool.query('SELECT id, email, approved, admin, created_at FROM users ORDER BY created_at DESC');
+  const list = result.rows.map(u => ({
     id: u.id,
     email: u.email,
     approved: u.approved || false,
     admin: u.admin || false,
-    createdAt: u.createdAt,
+    createdAt: u.created_at,
   }));
   res.json({ success: true, users: list });
 });
 
-app.post('/admin/approve', authMiddleware, adminMiddleware, (req, res) => {
+app.post('/admin/approve', authMiddleware, adminMiddleware, async (req, res) => {
   const { email } = req.body;
   if (!email) {
     return res.status(400).json({ success: false, error: 'Email requerido' });
   }
 
-  const users = loadUsers();
-  const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-  if (!user) {
+  const result = await pool.query('UPDATE users SET approved = true WHERE email = $1 RETURNING email', [email.toLowerCase()]);
+  if (result.rowCount === 0) {
     return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
   }
 
-  user.approved = true;
-  saveUsers(users);
-
-  console.log(`[Admin] Usuario aprobado: ${user.email}`);
-  res.json({ success: true, message: `${user.email} aprobado` });
+  console.log(`[Admin] Usuario aprobado: ${email.toLowerCase()}`);
+  res.json({ success: true, message: `${email.toLowerCase()} aprobado` });
 });
 
-app.post('/admin/revoke', authMiddleware, adminMiddleware, (req, res) => {
+app.post('/admin/revoke', authMiddleware, adminMiddleware, async (req, res) => {
   const { email } = req.body;
   if (!email) {
     return res.status(400).json({ success: false, error: 'Email requerido' });
   }
 
-  const users = loadUsers();
-  const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-  if (!user) {
-    return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
-  }
-
-  if (isAdmin(user.email)) {
+  if (isAdmin(email)) {
     return res.status(400).json({ success: false, error: 'No puedes revocar al admin' });
   }
 
-  user.approved = false;
-  saveUsers(users);
+  const result = await pool.query('UPDATE users SET approved = false WHERE email = $1 RETURNING email', [email.toLowerCase()]);
+  if (result.rowCount === 0) {
+    return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+  }
 
-  console.log(`[Admin] Acceso revocado: ${user.email}`);
-  res.json({ success: true, message: `Acceso de ${user.email} revocado` });
+  console.log(`[Admin] Acceso revocado: ${email.toLowerCase()}`);
+  res.json({ success: true, message: `Acceso de ${email.toLowerCase()} revocado` });
 });
 
-app.post('/admin/delete', authMiddleware, adminMiddleware, (req, res) => {
+app.post('/admin/delete', authMiddleware, adminMiddleware, async (req, res) => {
   const { email } = req.body;
   if (!email) {
     return res.status(400).json({ success: false, error: 'Email requerido' });
@@ -250,17 +232,13 @@ app.post('/admin/delete', authMiddleware, adminMiddleware, (req, res) => {
     return res.status(400).json({ success: false, error: 'No puedes eliminar al admin' });
   }
 
-  let users = loadUsers();
-  const before = users.length;
-  users = users.filter(u => u.email.toLowerCase() !== email.toLowerCase());
-
-  if (users.length === before) {
+  const result = await pool.query('DELETE FROM users WHERE email = $1 RETURNING email', [email.toLowerCase()]);
+  if (result.rowCount === 0) {
     return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
   }
 
-  saveUsers(users);
-  console.log(`[Admin] Usuario eliminado: ${email}`);
-  res.json({ success: true, message: `${email} eliminado` });
+  console.log(`[Admin] Usuario eliminado: ${email.toLowerCase()}`);
+  res.json({ success: true, message: `${email.toLowerCase()} eliminado` });
 });
 
 // ============================================================
@@ -268,8 +246,8 @@ app.post('/admin/delete', authMiddleware, adminMiddleware, (req, res) => {
 // ============================================================
 
 app.post('/separate', authMiddleware, async (req, res) => {
-  const users = loadUsers();
-  const user = users.find(u => u.email === req.user.email);
+  const userResult = await pool.query('SELECT approved FROM users WHERE email = $1', [req.user.email]);
+  const user = userResult.rows[0];
 
   if (!user || (!user.approved && !isAdmin(req.user.email))) {
     return res.status(403).json({
@@ -554,18 +532,20 @@ app.get('/admin', (req, res) => {
 // START
 // ============================================================
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
+  await initDB();
   console.log('');
   console.log('╔══════════════════════════════════════════════╗');
-  console.log('║       MVSep - Helper Server v5.0.0          ║');
+  console.log('║       MVSep - Helper Server v5.1.0          ║');
   console.log('╠══════════════════════════════════════════════╣');
   console.log(`║  Puerto: ${PORT}                              ║`);
   console.log(`║  Admin:  ${ADMIN_EMAIL || 'NO CONFIGURADO'}           ║`);
   console.log('║  Auth:   register + login + admin approval   ║');
+  console.log(`║  DB:     PostgreSQL                          ║`);
   console.log(`║  Cookies: ${YOUTUBE_COOKIES ? 'SI' : 'NO'}                                 ║`);
   console.log('╚══════════════════════════════════════════════╝');
   console.log('');
-  const users = loadUsers();
-  const approved = users.filter(u => u.approved).length;
-  console.log(`[MVSep-Helper] ${users.length} usuarios (${approved} aprobados)`);
+  const result = await pool.query('SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE approved = true) as approved FROM users');
+  const { total, approved } = result.rows[0];
+  console.log(`[MVSep-Helper] ${total} usuarios (${approved} aprobados)`);
 });
