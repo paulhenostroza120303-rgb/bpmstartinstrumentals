@@ -68,6 +68,8 @@ app.post('/separate', async (req, res) => {
     const infoJson = await runYtDlp([
       '--dump-json',
       '--no-playlist',
+      '--js-runtimes', 'node',
+      '--extractor-args', 'youtube:player_client=web_creator',
       youtubeUrl,
     ]);
 
@@ -92,6 +94,8 @@ app.post('/separate', async (req, res) => {
       '-o', audioPath,               // Archivo de salida
       '--no-playlist',
       '--no-progress',
+      '--js-runtimes', 'node',
+      '--extractor-args', 'youtube:player_client=web_creator',
       youtubeUrl,
     ]);
 
