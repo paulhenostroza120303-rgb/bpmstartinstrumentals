@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BPMSTART - Admin Panel</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f0f0f; color: #f1f1f1; min-height: 100vh; }
+    .container { max-width: 500px; margin: 0 auto; padding: 20px; }
+    h1 { font-size: 20px; margin-bottom: 4px; }
+    .subtitle { color: #aaa; font-size: 12px; margin-bottom: 20px; }
+    .login-box { background: #1a1a1a; border-radius: 10px; padding: 24px; margin-top: 40px; }
+    label { display: block; font-size: 12px; color: #aaa; margin-bottom: 4px; }
+    input { width: 100%; background: #272727; border: 1px solid #333; border-radius: 8px; padding: 10px 12px; color: #f1f1f1; font-size: 14px; outline: none; margin-bottom: 12px; }
+    input:focus { border-color: #ff4444; }
+    .btn { width: 100%; background: #ff4444; color: white; border: none; border-radius: 8px; padding: 12px; font-size: 14px; font-weight: 500; cursor: pointer; transition: background 0.2s; }
+    .btn:hover { background: #ff6666; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-approve { background: #2ecc71; }
+    .btn-approve:hover { background: #27ae60; }
+    .btn-revoke { background: #e67e22; font-size: 11px; padding: 5px 10px; width: auto; }
+    .btn-revoke:hover { background: #d35400; }
+    .btn-delete { background: #c0392b; font-size: 11px; padding: 5px 10px; width: auto; }
+    .btn-delete:hover { background: #a93226; }
+    .error { color: #ff4444; font-size: 12px; margin-bottom: 10px; display: none; }
+    .error.show { display: block; }
+    .user-list { margin-top: 16px; }
+    .user-card { background: #1a1a1a; border-radius: 8px; padding: 14px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+    .user-info { flex: 1; min-width: 0; }
+    .user-email { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .user-meta { font-size: 11px; color: #aaa; margin-top: 2px; }
+    .user-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .status-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 600; }
+    .badge-approved { background: rgba(46,204,113,0.15); color: #2ecc71; }
+    .badge-pending { background: rgba(243,156,18,0.15); color: #f39c12; }
+    .badge-admin { background: rgba(255,68,68,0.15); color: #ff4444; }
+    .section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #aaa; margin-bottom: 8px; margin-top: 16px; }
+    .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 12px; margin-bottom: 16px; }
+    .btn-logout { background: transparent; color: #aaa; border: 1px solid #333; border-radius: 6px; padding: 6px 12px; font-size: 11px; cursor: pointer; width: auto; }
+    .btn-logout:hover { color: #f1f1f1; border-color: #555; background: transparent; }
+    .hidden { display: none !important; }
+    .count { color: #aaa; font-size: 12px; margin-bottom: 8px; }
+    .refresh-btn { background: #272727; color: #aaa; border: 1px solid #333; border-radius: 6px; padding: 6px 12px; font-size: 11px; cursor: pointer; width: auto; margin-left: 8px; }
+    .refresh-btn:hover { color: #f1f1f1; border-color: #555; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <h1>BPMSTART Admin</h1>
+        <div class="subtitle">Gestionar acceso de usuarios</div>
+      </div>
+      <button class="btn btn-logout hidden" id="btn-logout">Salir</button>
+    </div>
+
+    <!-- Login -->
+    <div id="login-view">
+      <div class="login-box">
+        <div class="error" id="login-error"></div>
+        <label>Email admin</label>
+        <input type="email" id="email" placeholder="tu@email.com">
+        <label>Password</label>
+        <input type="password" id="password" placeholder="Tu password">
+        <button class="btn" id="btn-login">Entrar</button>
+      </div>
+    </div>
+
+    <!-- Users -->
+    <div id="users-view" class="hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div class="section-title" style="margin:0">Usuarios</div>
+        <button class="refresh-btn" id="btn-refresh">Actualizar</button>
+      </div>
+      <div class="count" id="user-count"></div>
+      <div class="user-list" id="user-list"></div>
+    </div>
+  </div>
+
+  <script>
+    const HELPER_URL = window.location.origin;
+    let token = null;
+
+    const loginView = document.getElementById('login-view');
+    const usersView = document.getElementById('users-view');
+    const loginError = document.getElementById('login-error');
+    const emailInput = document.getElementById('email');
+    const passwordInput = document.getElementById('password');
+    const btnLogin = document.getElementById('btn-login');
+    const btnLogout = document.getElementById('btn-logout');
+    const btnRefresh = document.getElementById('btn-refresh');
+    const userList = document.getElementById('user-list');
+    const userCount = document.getElementById('user-count');
+
+    async function login() {
+      loginError.classList.remove('show');
+      btnLogin.disabled = true;
+      btnLogin.textContent = 'Entrando...';
+
+      try {
+        const res = await fetch(`${HELPER_URL}/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: emailInput.value.trim(), password: passwordInput.value }),
+        });
+        const data = await res.json();
+
+        if (!data.success) {
+          loginError.textContent = data.error || 'Error';
+          loginError.classList.add('show');
+          return;
+        }
+
+        if (!data.admin) {
+          loginError.textContent = 'Este email no es admin';
+          loginError.classList.add('show');
+          return;
+        }
+
+        token = data.token;
+        localStorage.setItem('admin_token', token);
+        showUsers();
+      } catch (e) {
+        loginError.textContent = 'Error de conexion';
+        loginError.classList.add('show');
+      } finally {
+        btnLogin.disabled = false;
+        btnLogin.textContent = 'Entrar';
+      }
+    }
+
+    async function loadUsers() {
+      try {
+        const res = await fetch(`${HELPER_URL}/admin/users`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (!data.success) { logout(); return; }
+
+        const users = data.users;
+        const approved = users.filter(u => u.approved).length;
+        const pending = users.filter(u => !u.approved && !u.admin).length;
+        userCount.textContent = `${users.length} total — ${approved} aprobados, ${pending} pendientes`;
+
+        userList.innerHTML = '';
+        for (const u of users) {
+          const card = document.createElement('div');
+          card.className = 'user-card';
+
+          let badge = '';
+          if (u.admin) badge = '<span class="status-badge badge-admin">ADMIN</span>';
+          else if (u.approved) badge = '<span class="status-badge badge-approved">Aprobado</span>';
+          else badge = '<span class="status-badge badge-pending">Pendiente</span>';
+
+          let actions = '';
+          if (!u.admin) {
+            if (!u.approved) {
+              actions = `<button class="btn btn-approve" onclick="approve('${u.email}')">Aprobar</button>`;
+            } else {
+              actions = `<button class="btn btn-revoke" onclick="revoke('${u.email}')">Revocar</button>`;
+            }
+            actions += ` <button class="btn btn-delete" onclick="del('${u.email}')">X</button>`;
+          }
+
+          const date = u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '';
+          card.innerHTML = `
+            <div class="user-info">
+              <div class="user-email">${u.email}</div>
+              <div class="user-meta">${badge} ${date ? '· ' + date : ''}</div>
+            </div>
+            <div class="user-actions">${actions}</div>
+          `;
+          userList.appendChild(card);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function approve(email) {
+      await fetch(`${HELPER_URL}/admin/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ email }),
+      });
+      loadUsers();
+    }
+
+    async function revoke(email) {
+      if (!confirm(`Revocar acceso de ${email}?`)) return;
+      await fetch(`${HELPER_URL}/admin/revoke`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ email }),
+      });
+      loadUsers();
+    }
+
+    async function del(email) {
+      if (!confirm(`Eliminar ${email}? Esta accion no se puede deshacer.`)) return;
+      await fetch(`${HELPER_URL}/admin/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ email }),
+      });
+      loadUsers();
+    }
+
+    function logout() {
+      token = null;
+      localStorage.removeItem('admin_token');
+      loginView.classList.remove('hidden');
+      usersView.classList.add('hidden');
+      btnLogout.classList.add('hidden');
+    }
+
+    function showUsers() {
+      loginView.classList.add('hidden');
+      usersView.classList.remove('hidden');
+      btnLogout.classList.remove('hidden');
+      loadUsers();
+    }
+
+    btnLogin.addEventListener('click', login);
+    passwordInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') login(); });
+    btnLogout.addEventListener('click', logout);
+    btnRefresh.addEventListener('click', loadUsers);
+
+    // Auto-login if token saved
+    const saved = localStorage.getItem('admin_token');
+    if (saved) { token = saved; showUsers(); }
+  </script>
+</body>
+</html>
