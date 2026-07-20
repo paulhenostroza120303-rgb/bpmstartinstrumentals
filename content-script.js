@@ -457,13 +457,6 @@ function togglePlay() {
 }
 
 function playMixer() {
-  // Silenciar YouTube
-  const video = state.youtubeVideo;
-  if (video) {
-    video.muted = true;
-    state.youtubeMuted = true;
-  }
-
   if (instrumentalAudio) {
     instrumentalAudio.volume = state.instrumentalMuted ? 0 : state.instrumentalVolume;
   }
@@ -630,7 +623,6 @@ async function startSeparation() {
     return;
   }
 
-  state.youtubeVideo = video;
   stopPlayback();
 
   const urlParams = new URLSearchParams(window.location.search);
