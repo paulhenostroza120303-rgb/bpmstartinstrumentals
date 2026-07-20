@@ -3,6 +3,7 @@ const HELPER_URL = 'https://bpmstartinstrumentals-production.up.railway.app';
 // DOM elements
 const authView = document.getElementById('auth-view');
 const appView = document.getElementById('app-view');
+const pendingView = document.getElementById('pending-view');
 const tabLogin = document.getElementById('tab-login');
 const tabRegister = document.getElementById('tab-register');
 const formLogin = document.getElementById('form-login');
@@ -16,52 +17,33 @@ const registerConfirm = document.getElementById('register-confirm');
 const btnLogin = document.getElementById('btn-login');
 const btnRegister = document.getElementById('btn-register');
 const btnLogout = document.getElementById('btn-logout');
+const btnLogoutPending = document.getElementById('btn-logout-pending');
 const userEmail = document.getElementById('user-email');
+const pendingEmail = document.getElementById('pending-email');
 const statusDot = document.getElementById('status-dot');
 const statusText = document.getElementById('status-text');
 const statusDetail = document.getElementById('status-detail');
 const toast = document.getElementById('toast');
 const btnReset = document.getElementById('btn-reset');
 
-// ============================================================
-// INIT
-// ============================================================
-
-async function initializePopup() {
-  const result = await chrome.storage.sync.get(['auth_token', 'auth_email', 'mvsep_api_key']);
-
-  if (result.auth_token) {
-    // Verify token is still valid
-    try {
-      const res = await fetch(`${HELPER_URL}/verify`, {
-        headers: { 'Authorization': `Bearer ${result.auth_token}` },
-      });
-      if (res.ok) {
-        showApp(result.auth_email);
-        updateStatus();
-        return;
-      }
-    } catch (e) { /* token invalid */ }
-
-    await chrome.storage.sync.remove(['auth_token', 'auth_email']);
-  }
-
-  showAuth();
-}
-
-// ============================================================
-// AUTH TABS
-// ============================================================
-
 function showAuth() {
   authView.classList.remove('hidden');
   appView.classList.add('hidden');
+  pendingView.classList.add('hidden');
 }
 
 function showApp(email) {
   authView.classList.add('hidden');
   appView.classList.remove('hidden');
+  pendingView.classList.add('hidden');
   userEmail.textContent = email || '';
+}
+
+function showPending(email) {
+  authView.classList.add('hidden');
+  appView.classList.add('hidden');
+  pendingView.classList.remove('hidden');
+  pendingEmail.textContent = email || '';
 }
 
 function showAuthError(msg) {
@@ -72,6 +54,36 @@ function showAuthError(msg) {
 function hideAuthError() {
   authError.classList.remove('show');
 }
+
+async function initializePopup() {
+  const result = await chrome.storage.sync.get(['auth_token', 'auth_email']);
+
+  if (result.auth_token) {
+    try {
+      const res = await fetch(`${HELPER_URL}/verify`, {
+        headers: { 'Authorization': `Bearer ${result.auth_token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.approved) {
+          showApp(data.email);
+          updateStatus();
+          return;
+        } else {
+          showPending(data.email);
+          return;
+        }
+      }
+    } catch (e) { /* token invalid */ }
+    await chrome.storage.sync.remove(['auth_token', 'auth_email']);
+  }
+
+  showAuth();
+}
+
+// ============================================================
+// AUTH TABS
+// ============================================================
 
 tabLogin.addEventListener('click', () => {
   tabLogin.classList.add('active');
@@ -125,9 +137,14 @@ btnLogin.addEventListener('click', async () => {
       auth_email: data.email,
     });
 
-    showApp(data.email);
-    showToast('Sesion iniciada');
-    updateStatus();
+    if (data.approved) {
+      showApp(data.email);
+      showToast('Sesion iniciada');
+      updateStatus();
+    } else {
+      showPending(data.email);
+      showToast('Cuenta pendiente de aprobacion');
+    }
   } catch (e) {
     showAuthError('Error de conexion con el servidor');
   } finally {
@@ -183,8 +200,13 @@ btnRegister.addEventListener('click', async () => {
       auth_email: data.email,
     });
 
-    showApp(data.email);
-    showToast('Cuenta creada!');
+    if (data.approved) {
+      showApp(data.email);
+      showToast('Cuenta creada!');
+    } else {
+      showPending(data.email);
+      showToast('Cuenta creada. Espera aprobacion del admin.');
+    }
   } catch (e) {
     showAuthError('Error de conexion con el servidor');
   } finally {
@@ -197,11 +219,14 @@ btnRegister.addEventListener('click', async () => {
 // LOGOUT
 // ============================================================
 
-btnLogout.addEventListener('click', async () => {
+async function logout() {
   await chrome.storage.sync.remove(['auth_token', 'auth_email']);
   showAuth();
   showToast('Sesion cerrada');
-});
+}
+
+btnLogout.addEventListener('click', logout);
+btnLogoutPending.addEventListener('click', logout);
 
 // ============================================================
 // STATUS
@@ -276,7 +301,7 @@ function showToast(message, isError = false) {
   toast.textContent = message;
   toast.className = 'toast' + (isError ? ' error' : '');
   toast.classList.add('show');
-  setTimeout(() => toast.classList.remove('show'), 2000);
+  setTimeout(() => toast.classList.remove('show'), 2500);
 }
 
 // ============================================================

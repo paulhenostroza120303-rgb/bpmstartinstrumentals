@@ -400,8 +400,6 @@ async function checkLocalHelper() {
 
 async function useLocalHelper(youtubeUrl, tabId, session) {
   try {
-    const apiKey = await getApiKey();
-
     // Get auth token
     const authData = await chrome.storage.sync.get(['auth_token']);
     const token = authData.auth_token;
@@ -425,6 +423,9 @@ async function useLocalHelper(youtubeUrl, tabId, session) {
       if (response.status === 401) {
         await chrome.storage.sync.remove(['auth_token', 'auth_email']);
         throw new Error('Sesion expirada. Abre el popup e inicia sesion de nuevo.');
+      }
+      if (response.status === 403) {
+        throw new Error('Tu cuenta no esta aprobada. Espera a que el admin te apruebe.');
       }
       throw new Error(`Helper error ${response.status}: ${text}`);
     }

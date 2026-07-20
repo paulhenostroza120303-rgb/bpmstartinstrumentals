@@ -295,6 +295,39 @@
     }
 
     .hidden { display: none !important; }
+
+    .pending-icon {
+      text-align: center;
+      margin: 20px 0;
+    }
+
+    .pending-icon svg {
+      color: #f39c12;
+      opacity: 0.8;
+    }
+
+    .pending-title {
+      text-align: center;
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .pending-desc {
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+      margin-bottom: 16px;
+    }
+
+    .pending-email-display {
+      text-align: center;
+      font-size: 13px;
+      color: var(--accent);
+      font-weight: 500;
+      margin-bottom: 16px;
+    }
   </style>
 </head>
 <body>
@@ -394,7 +427,24 @@
     </div>
   </div>
 
-  <div class="toast" id="toast"></div>
+    <!-- PENDING APPROVAL VIEW -->
+    <div id="pending-view" class="hidden">
+      <div class="pending-icon">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M12 6v6l4 2"/>
+        </svg>
+      </div>
+      <div class="pending-title">Cuenta pendiente</div>
+      <div class="pending-desc">
+        Tu cuenta esta esperando aprobacion del administrador.<br>
+        No puedes usar la herramienta hasta que seas aprobado.
+      </div>
+      <div class="pending-email-display" id="pending-email"></div>
+      <button class="btn btn-secondary" id="btn-logout-pending" style="width:100%">Cerrar sesion</button>
+    </div>
+
+    <div class="toast" id="toast"></div>
 
   <script src="popup.js"></script>
 </body>

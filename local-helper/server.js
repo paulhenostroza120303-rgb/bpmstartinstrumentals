@@ -15,6 +15,7 @@ const MAX_POLL_ATTEMPTS = 120;
 const TEMP_DIR = path.join(__dirname, 'temp');
 const COOKIES_PATH = path.join(__dirname, 'cookies.txt');
 const JWT_SECRET = process.env.JWT_SECRET || 'bpmstart_secret_change_me_2026';
+const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || '').toLowerCase();
 const USERS_FILE = path.join(__dirname, 'users.json');
 
 if (!fs.existsSync(TEMP_DIR)) {
@@ -22,7 +23,7 @@ if (!fs.existsSync(TEMP_DIR)) {
 }
 
 // ============================================================
-// USERS DATABASE (JSON file)
+// USERS DATABASE
 // ============================================================
 
 function loadUsers() {
@@ -38,6 +39,10 @@ function loadUsers() {
 
 function saveUsers(users) {
   fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf8');
+}
+
+function isAdmin(email) {
+  return ADMIN_EMAIL && email.toLowerCase() === ADMIN_EMAIL;
 }
 
 // ============================================================
@@ -60,13 +65,20 @@ function authMiddleware(req, res, next) {
   }
 }
 
+function adminMiddleware(req, res, next) {
+  if (!isAdmin(req.user.email)) {
+    return res.status(403).json({ success: false, error: 'Solo el admin puede hacer esto' });
+  }
+  next();
+}
+
 // Write cookies from env var if provided
 const YOUTUBE_COOKIES = process.env.YOUTUBE_COOKIES;
 if (YOUTUBE_COOKIES) {
   fs.writeFileSync(COOKIES_PATH, YOUTUBE_COOKIES, 'utf8');
   console.log('[Config] YouTube cookies escritas desde variable de entorno');
 } else {
-  console.log('[Config] WARNING: No YOUTUBE_COOKIES configurada, YouTube puede bloquear');
+  console.log('[Config] WARNING: No YOUTUBE_COOKIES configurada');
 }
 
 const app = express();
@@ -74,7 +86,7 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
 app.get('/ping', (req, res) => {
-  res.json({ status: 'ok', version: '4.0.0', source: 'yt-dlp+cookies', auth: true });
+  res.json({ status: 'ok', version: '5.0.0', source: 'yt-dlp+cookies', auth: true });
 });
 
 // ============================================================
@@ -108,6 +120,8 @@ app.post('/register', async (req, res) => {
     id: Date.now().toString(36) + Math.random().toString(36).substring(2, 8),
     email: email.toLowerCase(),
     password: hash,
+    approved: isAdmin(email),
+    admin: isAdmin(email),
     createdAt: new Date().toISOString(),
   };
 
@@ -116,8 +130,14 @@ app.post('/register', async (req, res) => {
 
   const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '30d' });
 
-  console.log(`[Auth] Nuevo usuario registrado: ${user.email}`);
-  res.json({ success: true, token, email: user.email });
+  console.log(`[Auth] Nuevo usuario: ${user.email} (approved: ${user.approved}, admin: ${user.admin})`);
+  res.json({
+    success: true,
+    token,
+    email: user.email,
+    approved: user.approved,
+    admin: user.admin,
+  });
 });
 
 app.post('/login', async (req, res) => {
@@ -141,33 +161,136 @@ app.post('/login', async (req, res) => {
 
   const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '30d' });
 
-  console.log(`[Auth] Login exitoso: ${user.email}`);
-  res.json({ success: true, token, email: user.email });
+  console.log(`[Auth] Login: ${user.email} (approved: ${user.approved})`);
+  res.json({
+    success: true,
+    token,
+    email: user.email,
+    approved: user.approved,
+    admin: user.admin || isAdmin(user.email),
+  });
 });
 
 app.get('/verify', authMiddleware, (req, res) => {
-  res.json({ success: true, email: req.user.email });
+  const users = loadUsers();
+  const user = users.find(u => u.email === req.user.email);
+  res.json({
+    success: true,
+    email: req.user.email,
+    approved: user?.approved || false,
+    admin: user?.admin || isAdmin(req.user.email),
+  });
 });
 
 // ============================================================
-// SEPARATE (protegido con auth)
+// ADMIN ENDPOINTS
+// ============================================================
+
+app.get('/admin/users', authMiddleware, adminMiddleware, (req, res) => {
+  const users = loadUsers();
+  const list = users.map(u => ({
+    id: u.id,
+    email: u.email,
+    approved: u.approved || false,
+    admin: u.admin || false,
+    createdAt: u.createdAt,
+  }));
+  res.json({ success: true, users: list });
+});
+
+app.post('/admin/approve', authMiddleware, adminMiddleware, (req, res) => {
+  const { email } = req.body;
+  if (!email) {
+    return res.status(400).json({ success: false, error: 'Email requerido' });
+  }
+
+  const users = loadUsers();
+  const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+  if (!user) {
+    return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+  }
+
+  user.approved = true;
+  saveUsers(users);
+
+  console.log(`[Admin] Usuario aprobado: ${user.email}`);
+  res.json({ success: true, message: `${user.email} aprobado` });
+});
+
+app.post('/admin/revoke', authMiddleware, adminMiddleware, (req, res) => {
+  const { email } = req.body;
+  if (!email) {
+    return res.status(400).json({ success: false, error: 'Email requerido' });
+  }
+
+  const users = loadUsers();
+  const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+  if (!user) {
+    return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+  }
+
+  if (isAdmin(user.email)) {
+    return res.status(400).json({ success: false, error: 'No puedes revocar al admin' });
+  }
+
+  user.approved = false;
+  saveUsers(users);
+
+  console.log(`[Admin] Acceso revocado: ${user.email}`);
+  res.json({ success: true, message: `Acceso de ${user.email} revocado` });
+});
+
+app.post('/admin/delete', authMiddleware, adminMiddleware, (req, res) => {
+  const { email } = req.body;
+  if (!email) {
+    return res.status(400).json({ success: false, error: 'Email requerido' });
+  }
+
+  if (isAdmin(email)) {
+    return res.status(400).json({ success: false, error: 'No puedes eliminar al admin' });
+  }
+
+  let users = loadUsers();
+  const before = users.length;
+  users = users.filter(u => u.email.toLowerCase() !== email.toLowerCase());
+
+  if (users.length === before) {
+    return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+  }
+
+  saveUsers(users);
+  console.log(`[Admin] Usuario eliminado: ${email}`);
+  res.json({ success: true, message: `${email} eliminado` });
+});
+
+// ============================================================
+// SEPARATE (requiere auth + aprobacion)
 // ============================================================
 
 app.post('/separate', authMiddleware, async (req, res) => {
-  const { youtubeUrl, apiKey } = req.body;
+  const users = loadUsers();
+  const user = users.find(u => u.email === req.user.email);
+
+  if (!user || (!user.approved && !isAdmin(req.user.email))) {
+    return res.status(403).json({
+      success: false,
+      error: 'Tu cuenta no esta aprobada. Espera a que el admin te apruebe.',
+    });
+  }
+
+  const { youtubeUrl } = req.body;
 
   if (!youtubeUrl) {
     return res.status(400).json({ success: false, error: 'Falta youtubeUrl' });
   }
 
-  const mvsepKey = apiKey || DEFAULT_API_KEY;
-  console.log(`[MVSep-Helper] API key: ${mvsepKey ? mvsepKey.substring(0, 8) + '...' : 'VACIA'}`);
+  const mvsepKey = DEFAULT_API_KEY;
+  console.log(`[MVSep-Helper] Usuario: ${req.user.email} | Descargando: ${youtubeUrl}`);
   const jobId = 'mvsep_' + Date.now();
   const audioPath = path.join(TEMP_DIR, `${jobId}.mp3`);
 
   try {
-    // 1. Get video info
-    console.log(`[MVSep-Helper] Obteniendo info: ${youtubeUrl}`);
+    console.log(`[MVSep-Helper] Obteniendo info...`);
     const infoArgs = ['--dump-json', '--no-playlist'];
     if (YOUTUBE_COOKIES) infoArgs.push('--cookies', COOKIES_PATH);
     infoArgs.push(youtubeUrl);
@@ -181,11 +304,10 @@ app.post('/separate', authMiddleware, async (req, res) => {
     if (duration > 600) {
       return res.status(400).json({
         success: false,
-        error: `El video dura ${Math.floor(duration / 60)} minutos. Maximo permitido: 10 minutos`,
+        error: `El video dura ${Math.floor(duration / 60)} minutos. Maximo: 10 minutos`,
       });
     }
 
-    // 2. Download audio
     console.log(`[MVSep-Helper] Descargando audio...`);
     const dlArgs = [
       '-x', '--audio-format', 'mp3', '--audio-quality', '0',
@@ -197,38 +319,33 @@ app.post('/separate', authMiddleware, async (req, res) => {
     await runYtDlp(dlArgs);
 
     const stats = fs.statSync(audioPath);
-    console.log(`[MVSep-Helper] Audio descargado: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
+    console.log(`[MVSep-Helper] Audio: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
 
-    // 3. Upload to mvsep.com
     console.log(`[MVSep-Helper] Subiendo a mvsep.com...`);
     const uploadResult = await uploadToMvsep(audioPath, mvsepKey);
-    console.log(`[MVSep-Helper] Respuesta mvsep:`, JSON.stringify(uploadResult).substring(0, 500));
+    console.log(`[MVSep-Helper] mvsep:`, JSON.stringify(uploadResult).substring(0, 500));
 
     const mvsepJobId = uploadResult?.data?.hash || uploadResult?.job_id;
     if (!mvsepJobId) {
       throw new Error(uploadResult?.message || uploadResult?.error || uploadResult?.detail || JSON.stringify(uploadResult) || 'Error al subir a mvsep.com');
     }
-    console.log(`[MVSep-Helper] Job creado: ${mvsepJobId}`);
+    console.log(`[MVSep-Helper] Job: ${mvsepJobId}`);
 
-    // 4. Poll until done
     console.log(`[MVSep-Helper] Procesando... (30-120s)`);
-    const pollResult = await pollMvsepJob(mvsepJobId, mvsepKey);
+    const pollResult = await pollMvsepJob(mvsepJobId);
     if (!pollResult.success) {
       throw new Error('Error en procesamiento: ' + (pollResult.error || 'desconocido'));
     }
-    console.log(`[MVSep-Helper] Procesamiento completado.`);
+    console.log(`[MVSep-Helper] Completado.`);
 
-    // 5. Download results
     console.log(`[MVSep-Helper] URLs:`, JSON.stringify(pollResult.downloadUrls).substring(0, 800));
     const downloadResult = await downloadMvsepResults(pollResult.downloadUrls, mvsepKey);
     if (!downloadResult.success) {
       throw new Error('Error al descargar resultados');
     }
 
-    // 6. Cleanup
     try { fs.unlinkSync(audioPath); } catch (e) { /* ignore */ }
 
-    // 7. Send response
     console.log(`[MVSep-Helper] Instrumental: ${downloadResult.instrumental ? (downloadResult.instrumental.byteLength / 1024).toFixed(1) + ' KB' : 'N/A'}`);
     console.log(`[MVSep-Helper] Vocal: ${downloadResult.vocal ? (downloadResult.vocal.byteLength / 1024).toFixed(1) + ' KB' : 'N/A'}`);
 
@@ -292,11 +409,11 @@ async function uploadToMvsep(audioPath, apiKey) {
   });
   const url = `${MVSEP_API_BASE}/separation/create?${params.toString()}`;
 
-  console.log(`[MVSep-Helper] Subiendo ${(buffer.length / 1024 / 1024).toFixed(2)} MB a mvsep.com...`);
+  console.log(`[MVSep-Helper] Subiendo ${(buffer.length / 1024 / 1024).toFixed(2)} MB...`);
 
   const response = await fetch(url, { method: 'POST', body: form });
   const responseText = await response.text();
-  console.log(`[MVSep-Helper] Respuesta API (${response.status}):`, responseText.substring(0, 500));
+  console.log(`[MVSep-Helper] API (${response.status}):`, responseText.substring(0, 500));
 
   if (!response.ok) {
     throw new Error(`API error ${response.status}: ${responseText.substring(0, 300)}`);
@@ -432,14 +549,15 @@ function sleep(ms) {
 app.listen(PORT, () => {
   console.log('');
   console.log('╔══════════════════════════════════════════════╗');
-  console.log('║       MVSep - Helper Server v4.0.0          ║');
+  console.log('║       MVSep - Helper Server v5.0.0          ║');
   console.log('╠══════════════════════════════════════════════╣');
   console.log(`║  Puerto: ${PORT}                              ║`);
-  console.log('║  Auth: /register, /login, /verify            ║');
-  console.log('║  API:   POST /separate (requiere token)      ║');
+  console.log(`║  Admin:  ${ADMIN_EMAIL || 'NO CONFIGURADO'}           ║`);
+  console.log('║  Auth:   register + login + admin approval   ║');
   console.log(`║  Cookies: ${YOUTUBE_COOKIES ? 'SI' : 'NO'}                                 ║`);
   console.log('╚══════════════════════════════════════════════╝');
   console.log('');
   const users = loadUsers();
-  console.log(`[MVSep-Helper] Servidor listo! ${users.length} usuarios registrados.`);
+  const approved = users.filter(u => u.approved).length;
+  console.log(`[MVSep-Helper] ${users.length} usuarios (${approved} aprobados)`);
 });
