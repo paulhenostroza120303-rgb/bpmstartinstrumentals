@@ -1,0 +1,3 @@
+FROM ghcr.io/imputnet/cobalt:latest
+
+COPY cobalt/cookies.json /app/cookies.json
