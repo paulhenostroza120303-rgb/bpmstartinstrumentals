@@ -671,40 +671,34 @@ async function handleGetResults(sender) {
   }
 
   // API keys invertidas: result.vocal = instrumental real, result.instrumental = vocal real
-  const instrumentalData = session.results.vocal;
-  const vocalData = session.results.instrumental;
+  const stemData = {};
+  if (session.results.vocal) stemData.instrumental = session.results.vocal;
+  if (session.results.instrumental) stemData.vocal = session.results.instrumental;
 
-  if (!instrumentalData && !vocalData) {
+  if (Object.keys(stemData).length === 0) {
     return { success: false, error: 'No hay pistas disponibles' };
   }
 
   const CHUNK_SIZE = 10 * 1024 * 1024;
-  const chunks = { vocal: [], instrumental: [] };
+  const chunks = {};
+  const meta = { stems: {} };
 
-  if (instrumentalData) {
-    const base64 = bufferToBase64(instrumentalData);
+  for (const [stemId, data] of Object.entries(stemData)) {
+    const base64 = bufferToBase64(data);
+    const stemChunks = [];
     for (let i = 0; i < base64.length; i += CHUNK_SIZE) {
-      chunks.instrumental.push(base64.slice(i, i + CHUNK_SIZE));
+      stemChunks.push(base64.slice(i, i + CHUNK_SIZE));
     }
-  }
-
-  if (vocalData) {
-    const base64 = bufferToBase64(vocalData);
-    for (let i = 0; i < base64.length; i += CHUNK_SIZE) {
-      chunks.vocal.push(base64.slice(i, i + CHUNK_SIZE));
-    }
+    chunks[stemId] = stemChunks;
+    meta.stems[stemId] = stemChunks.length;
+    meta[`totalChunks${stemId.charAt(0).toUpperCase() + stemId.slice(1)}`] = stemChunks.length;
+    meta[`totalSize${stemId.charAt(0).toUpperCase() + stemId.slice(1)}`] = data.byteLength;
   }
 
   resultChunks.set(tabId, chunks);
-  console.log(`[MVSep] Pistas divididas: instrumental=${chunks.instrumental.length} chunks, vocal=${chunks.vocal.length} chunks`);
+  console.log(`[MVSep] Stems: ${Object.keys(chunks).map(k => `${k}=${chunks[k].length}ch`).join(', ')}`);
 
-  return {
-    success: true,
-    totalChunksInstrumental: chunks.instrumental.length,
-    totalChunksVocal: chunks.vocal.length,
-    totalSizeInstrumental: instrumentalData ? instrumentalData.byteLength : 0,
-    totalSizeVocal: vocalData ? vocalData.byteLength : 0,
-  };
+  return { success: true, ...meta };
 }
 
 async function handleGetChunk(message, sender) {
