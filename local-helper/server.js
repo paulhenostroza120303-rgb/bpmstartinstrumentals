@@ -136,18 +136,20 @@ app.post('/separate', async (req, res) => {
 async function downloadViaCobalt(youtubeUrl, outputPath) {
   console.log(`[Cobalt] Solicitando audio a: ${COBALT_API_URL}`);
 
-  const response = await fetch(COBALT_API_URL, {
+  const body = {
+    url: youtubeUrl,
+    downloadMode: 'audio',
+    audioFormat: 'mp3',
+  };
+  console.log(`[Cobalt] Request body:`, JSON.stringify(body));
+
+  const response = await fetch(COBALT_API_URL + '/', {
     method: 'POST',
     headers: {
       'Accept': 'application/json',
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      url: youtubeUrl,
-      downloadMode: 'audio',
-      aFormat: 'mp3',
-      filenamePattern: 'basic',
-    }),
+    body: JSON.stringify(body),
   });
 
   const data = await response.json();
