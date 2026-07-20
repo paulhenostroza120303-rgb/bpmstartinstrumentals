@@ -69,7 +69,7 @@ app.post('/separate', async (req, res) => {
       '--dump-json',
       '--no-playlist',
       '--js-runtimes', 'node',
-      '--extractor-args', 'youtube:player_client=web_creator',
+      '--extractor-args', 'youtube:player_client=mediaconnect,tv,web',
       youtubeUrl,
     ]);
 
@@ -95,7 +95,7 @@ app.post('/separate', async (req, res) => {
       '--no-playlist',
       '--no-progress',
       '--js-runtimes', 'node',
-      '--extractor-args', 'youtube:player_client=web_creator',
+      '--extractor-args', 'youtube:player_client=mediaconnect,tv,web',
       youtubeUrl,
     ]);
 
