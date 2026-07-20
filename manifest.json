@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "BPMSTART INSTRUMENTALS",
+  "version": "1.0.0",
+  "description": "Separa el audio de YouTube y obtén solo la pista instrumental en FLAC usando mvsep.com.",
+  "permissions": [
+    "tabCapture",
+    "offscreen",
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://*.youtube.com/*",
+    "https://*.mvsep.com/*",
+    "http://localhost:3456/*",
+    "https://*.up.railway.app/*"
+  ],
+  "background": {
+    "service_worker": "service-worker.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://*.youtube.com/*"],
+      "js": ["content-script.js"],
+      "css": ["styles.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "BPMSTART Instrumentals",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

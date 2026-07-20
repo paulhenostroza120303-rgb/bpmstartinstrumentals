@@ -1,0 +1,596 @@
+/* ============================================================
+   MVSep - Styles (YouTube Overlay)
+   Diseño oscuro moderno que combina con YouTube
+   ============================================================ */
+
+/* ============================================================
+   PANEL PRINCIPAL
+   ============================================================ */
+
+.mvsep-panel {
+  position: fixed;
+  top: 80px;
+  right: 24px;
+  width: 320px;
+  background: rgba(15, 15, 15, 0.96);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.3);
+  z-index: 999999;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: #f1f1f1;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow: hidden;
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+              visibility 0.25s ease;
+  transform-origin: top right;
+}
+
+.mvsep-panel.mvsep-hidden {
+  transform: scale(0.92) translateY(-12px);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.mvsep-panel.mvsep-visible {
+  transform: scale(1) translateY(0);
+  opacity: 1;
+  visibility: visible;
+  pointer-events: all;
+}
+
+/* Panel anclado (no se oculta automáticamente) */
+.mvsep-panel.mvsep-pinned {
+  top: 80px;
+  right: 24px;
+}
+
+/* ============================================================
+   HEADER
+   ============================================================ */
+
+.mvsep-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  user-select: none;
+}
+
+.mvsep-logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #f1f1f1;
+}
+
+.mvsep-logo svg {
+  color: #ff4444;
+}
+
+.mvsep-header-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.mvsep-btn-icon {
+  background: transparent;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.mvsep-btn-icon:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f1f1f1;
+}
+
+.mvsep-btn-icon.active {
+  color: #ffaa33;
+}
+
+/* ============================================================
+   BODY
+   ============================================================ */
+
+.mvsep-body {
+  padding: 16px;
+}
+
+.mvsep-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #f1f1f1;
+  margin-bottom: 4px;
+}
+
+.mvsep-description {
+  font-size: 12px;
+  color: #888;
+  margin-bottom: 16px;
+}
+
+/* ============================================================
+   ESTADOS
+   ============================================================ */
+
+.mvsep-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  transition: opacity 0.2s;
+}
+
+.mvsep-state.mvsep-hidden {
+  display: none;
+}
+
+/* ============================================================
+   BOTONES
+   ============================================================ */
+
+.mvsep-btn-primary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #ff4444;
+  color: white;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.12s, box-shadow 0.2s;
+  width: 100%;
+  justify-content: center;
+}
+
+.mvsep-btn-primary:hover {
+  background: #ff6666;
+  box-shadow: 0 4px 16px rgba(255, 68, 68, 0.35);
+}
+
+.mvsep-btn-primary:active {
+  transform: scale(0.97);
+}
+
+.mvsep-btn-secondary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #ccc;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.mvsep-btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: #f1f1f1;
+}
+
+.mvsep-btn-secondary:active {
+  transform: scale(0.97);
+}
+
+.mvsep-btn-stop {
+  background: rgba(255, 68, 68, 0.15);
+  border-color: rgba(255, 68, 68, 0.3);
+  color: #ff4444;
+}
+
+.mvsep-btn-stop:hover {
+  background: rgba(255, 68, 68, 0.25);
+  border-color: rgba(255, 68, 68, 0.5);
+}
+
+/* ============================================================
+   RECORDING
+   ============================================================ */
+
+.mvsep-recording-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mvsep-recording-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ff4444;
+  animation: mvsep-record-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes mvsep-record-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.85); }
+}
+
+.mvsep-recording-text {
+  font-size: 13px;
+  font-weight: 500;
+  color: #f1f1f1;
+}
+
+.mvsep-timer {
+  font-size: 28px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #ff4444;
+  letter-spacing: 2px;
+}
+
+/* ============================================================
+   SPINNER
+   ============================================================ */
+
+.mvsep-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid rgba(255, 255, 255, 0.08);
+  border-top-color: #ff4444;
+  border-radius: 50%;
+  animation: mvsep-spin 0.8s linear infinite;
+}
+
+@keyframes mvsep-spin {
+  to { transform: rotate(360deg); }
+}
+
+.mvsep-status-text {
+  font-size: 12px;
+  color: #aaa;
+}
+
+/* ============================================================
+   PROGRESS BAR
+   ============================================================ */
+
+.mvsep-progress-bar {
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.mvsep-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #ff4444, #ff6b6b);
+  border-radius: 2px;
+  transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  width: 0%;
+}
+
+.mvsep-progress-text {
+  font-size: 11px;
+  color: #888;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   COMPLETE
+   ============================================================ */
+
+.mvsep-success-icon {
+  color: #2ecc71;
+  animation: mvsep-success-pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes mvsep-success-pop {
+  0% { transform: scale(0); }
+  100% { transform: scale(1); }
+}
+
+.mvsep-success-text {
+  font-size: 14px;
+  font-weight: 600;
+  color: #2ecc71;
+}
+
+/* ============================================================
+   MODE SELECTOR
+   ============================================================ */
+
+.mvsep-mode-selector {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+  margin-top: 4px;
+}
+
+.mvsep-mode-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #888;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 8px 6px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.mvsep-mode-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ccc;
+}
+
+.mvsep-mode-btn.active {
+  background: rgba(255, 68, 68, 0.12);
+  border-color: rgba(255, 68, 68, 0.3);
+  color: #ff4444;
+}
+
+.mvsep-mode-btn.active[data-mode="instrumental"] {
+  background: rgba(46, 204, 113, 0.12);
+  border-color: rgba(46, 204, 113, 0.3);
+  color: #2ecc71;
+}
+
+.mvsep-mode-btn.active[data-mode="vocal"] {
+  background: rgba(52, 152, 219, 0.12);
+  border-color: rgba(52, 152, 219, 0.3);
+  color: #3498db;
+}
+
+/* ============================================================
+   VOLUME CONTROL
+   ============================================================ */
+
+.mvsep-volume-control {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.mvsep-volume-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #888;
+  white-space: nowrap;
+}
+
+.mvsep-volume-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.mvsep-volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #f1f1f1;
+  border: 2px solid #555;
+  cursor: pointer;
+  transition: transform 0.15s, border-color 0.15s;
+}
+
+.mvsep-volume-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+  border-color: #ff4444;
+}
+
+.mvsep-volume-slider::-webkit-slider-thumb:active {
+  transform: scale(0.95);
+}
+
+/* ============================================================
+   ACTIONS SECONDARY
+   ============================================================ */
+
+.mvsep-actions-secondary {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+  margin-top: 4px;
+}
+
+.mvsep-actions-secondary .mvsep-btn-secondary {
+  flex: 1;
+  justify-content: center;
+}
+
+/* ============================================================
+   PLAYER (play/pause + timeline)
+   ============================================================ */
+
+.mvsep-player {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.mvsep-play-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #ff4444;
+  border: none;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.mvsep-play-btn:hover {
+  background: #ff6666;
+  transform: scale(1.05);
+}
+
+.mvsep-play-btn:active {
+  transform: scale(0.95);
+}
+
+.mvsep-timeline-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.mvsep-time-current,
+.mvsep-time-total {
+  font-size: 10px;
+  color: #888;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  min-width: 28px;
+}
+
+.mvsep-time-current {
+  text-align: right;
+}
+
+.mvsep-time-total {
+  text-align: left;
+}
+
+.mvsep-timeline {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.mvsep-timeline::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #ff4444;
+  border: 2px solid #fff;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+
+.mvsep-timeline::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.mvsep-timeline::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #ff4444;
+  border: 2px solid #fff;
+  cursor: pointer;
+}
+
+.mvsep-timeline::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #ff4444 var(--mvsep-progress, 0%), rgba(255,255,255,0.1) var(--mvsep-progress, 0%));
+}
+
+.mvsep-btn-download-full {
+  width: 100%;
+  justify-content: center;
+}
+
+/* ============================================================
+   ERROR
+   ============================================================ */
+
+.mvsep-error-icon {
+  color: #ff4444;
+}
+
+.mvsep-error-text {
+  font-size: 12px;
+  color: #ff6666;
+  text-align: center;
+  word-break: break-word;
+}
+
+/* ============================================================
+   YOUTUBE BUTTON
+   ============================================================ */
+
+.mvsep-youtube-btn {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  opacity: 0.85;
+  transition: opacity 0.15s, transform 0.15s;
+}
+
+.mvsep-youtube-btn:hover {
+  opacity: 1;
+  transform: scale(1.05);
+}
+
+.mvsep-youtube-btn svg {
+  width: 20px;
+  height: 20px;
+  color: #fff;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+}
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+
+@media (max-width: 768px) {
+  .mvsep-panel {
+    top: auto;
+    bottom: 0;
+    right: 0;
+    left: 0;
+    width: 100%;
+    border-radius: 14px 14px 0 0;
+    max-height: 70vh;
+    overflow-y: auto;
+  }
+}
