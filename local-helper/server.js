@@ -1,54 +1,38 @@
-// ============================================================
-// MVSep - Local Helper Server
-// Descarga audio de YouTube via Cobalt API, lo sube a mvsep.com,
-// y devuelve las pistas separadas (instrumental + vocal)
-// ============================================================
-// Uso: npm install && node server.js
-// ============================================================
-
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
-
-// ============================================================
-// CONFIGURACIÓN
-// ============================================================
+const { execFile } = require('child_process');
 
 const PORT = process.env.PORT || 3456;
 const MVSEP_API_BASE = 'https://de.mvsep.com/api';
 const DEFAULT_API_KEY = process.env.MVSEP_API_KEY || '1Fy0mpljKMTlmesywS135hZ7OBq076';
-let COBALT_API_URL = process.env.COBALT_API_URL || 'https://api.cobalt.tools';
-console.log(`[Config] COBALT_API_URL raw: "${process.env.COBALT_API_URL}"`);
-if (!COBALT_API_URL.startsWith('http')) COBALT_API_URL = 'https://' + COBALT_API_URL;
-COBALT_API_URL = COBALT_API_URL.replace(/\/+$/, '');
-console.log(`[Config] COBALT_API_URL final: "${COBALT_API_URL}"`);
-const SEP_TYPE = 40; // BS Roformer
+const SEP_TYPE = 40;
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLL_ATTEMPTS = 120;
 const TEMP_DIR = path.join(__dirname, 'temp');
+const COOKIES_PATH = path.join(__dirname, 'cookies.txt');
 
 if (!fs.existsSync(TEMP_DIR)) {
   fs.mkdirSync(TEMP_DIR, { recursive: true });
+}
+
+// Write cookies from env var if provided
+const YOUTUBE_COOKIES = process.env.YOUTUBE_COOKIES;
+if (YOUTUBE_COOKIES) {
+  fs.writeFileSync(COOKIES_PATH, YOUTUBE_COOKIES, 'utf8');
+  console.log('[Config] YouTube cookies escritas desde variable de entorno');
+} else {
+  console.log('[Config] WARNING: No YOUTUBE_COOKIES configurada, YouTube puede bloquear');
 }
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
-// ============================================================
-// ENDPOINT: Health check
-// ============================================================
-
 app.get('/ping', (req, res) => {
-  res.json({ status: 'ok', version: '2.0.0', source: 'cobalt' });
+  res.json({ status: 'ok', version: '3.0.0', source: 'yt-dlp+cookies' });
 });
-
-// ============================================================
-// ENDPOINT PRINCIPAL: Separar audio de YouTube
-// POST /separate
-// Body: { youtubeUrl: string, apiKey?: string }
-// ============================================================
 
 app.post('/separate', async (req, res) => {
   const { youtubeUrl, apiKey } = req.body;
@@ -58,67 +42,83 @@ app.post('/separate', async (req, res) => {
   }
 
   const mvsepKey = apiKey || DEFAULT_API_KEY;
-  console.log(`[MVSep-Helper] API key: ${mvsepKey ? mvsepKey.substring(0, 8) + '...' : 'VACÍA'}`);
+  console.log(`[MVSep-Helper] API key: ${mvsepKey ? mvsepKey.substring(0, 8) + '...' : 'VACIA'}`);
   const jobId = 'mvsep_' + Date.now();
   const audioPath = path.join(TEMP_DIR, `${jobId}.mp3`);
 
   try {
-    // 1. DESCARGAR AUDIO VIA COBALT
-    console.log(`[MVSep-Helper] Descargando audio de: ${youtubeUrl}`);
-    const cobaltResult = await downloadViaCobalt(youtubeUrl, audioPath);
+    // 1. Get video info
+    console.log(`[MVSep-Helper] Obteniendo info: ${youtubeUrl}`);
+    const infoArgs = ['--dump-json', '--no-playlist'];
+    if (YOUTUBE_COOKIES) infoArgs.push('--cookies', COOKIES_PATH);
+    infoArgs.push(youtubeUrl);
+
+    const infoJson = await runYtDlp(infoArgs);
+    const info = JSON.parse(infoJson);
+    const title = (info.title || 'unknown').replace(/[^\w\s]/gi, '').slice(0, 50);
+    const duration = parseInt(info.duration || 0);
+    console.log(`[MVSep-Helper] Video: "${title}" (${Math.floor(duration / 60)}:${String(duration % 60).padStart(2, '0')})`);
+
+    if (duration > 600) {
+      return res.status(400).json({
+        success: false,
+        error: `El video dura ${Math.floor(duration / 60)} minutos. Maximo permitido: 10 minutos`,
+      });
+    }
+
+    // 2. Download audio
+    console.log(`[MVSep-Helper] Descargando audio...`);
+    const dlArgs = [
+      '-x', '--audio-format', 'mp3', '--audio-quality', '0',
+      '-o', audioPath, '--no-playlist', '--no-progress',
+    ];
+    if (YOUTUBE_COOKIES) dlArgs.push('--cookies', COOKIES_PATH);
+    dlArgs.push(youtubeUrl);
+
+    await runYtDlp(dlArgs);
 
     const stats = fs.statSync(audioPath);
     console.log(`[MVSep-Helper] Audio descargado: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
 
-    // 2. SUBIR A MVSEP.COM
+    // 3. Upload to mvsep.com
     console.log(`[MVSep-Helper] Subiendo a mvsep.com...`);
     const uploadResult = await uploadToMvsep(audioPath, mvsepKey);
-
     console.log(`[MVSep-Helper] Respuesta mvsep:`, JSON.stringify(uploadResult).substring(0, 500));
 
     const mvsepJobId = uploadResult?.data?.hash || uploadResult?.job_id;
     if (!mvsepJobId) {
-      const errMsg = uploadResult?.message || uploadResult?.error || uploadResult?.detail || JSON.stringify(uploadResult) || 'Error al subir a mvsep.com';
-      throw new Error(errMsg);
+      throw new Error(uploadResult?.message || uploadResult?.error || uploadResult?.detail || JSON.stringify(uploadResult) || 'Error al subir a mvsep.com');
     }
     console.log(`[MVSep-Helper] Job creado: ${mvsepJobId}`);
 
-    // 3. POLLEAR HASTA COMPLETAR
-    console.log(`[MVSep-Helper] Procesando... (esto puede tomar 30-120s)`);
+    // 4. Poll until done
+    console.log(`[MVSep-Helper] Procesando... (30-120s)`);
     const pollResult = await pollMvsepJob(mvsepJobId, mvsepKey);
-
     if (!pollResult.success) {
       throw new Error('Error en procesamiento: ' + (pollResult.error || 'desconocido'));
     }
-
     console.log(`[MVSep-Helper] Procesamiento completado.`);
 
-    // 4. DESCARGAR RESULTADOS
-    console.log(`[MVSep-Helper] URLs de descarga:`, JSON.stringify(pollResult.downloadUrls).substring(0, 800));
+    // 5. Download results
+    console.log(`[MVSep-Helper] URLs:`, JSON.stringify(pollResult.downloadUrls).substring(0, 800));
     const downloadResult = await downloadMvsepResults(pollResult.downloadUrls, mvsepKey);
-
     if (!downloadResult.success) {
       throw new Error('Error al descargar resultados');
     }
 
-    // 5. LIMPIAR ARCHIVO TEMPORAL
+    // 6. Cleanup
     try { fs.unlinkSync(audioPath); } catch (e) { /* ignore */ }
 
-    // 6. ENVIAR RESPUESTA
-    console.log(`[MVSep-Helper] Enviando resultados...`);
-    console.log(`  - Instrumental: ${downloadResult.instrumental ? (downloadResult.instrumental.byteLength / 1024).toFixed(1) + ' KB' : 'N/A'}`);
-    console.log(`  - Vocal: ${downloadResult.vocal ? (downloadResult.vocal.byteLength / 1024).toFixed(1) + ' KB' : 'N/A'}`);
+    // 7. Send response
+    console.log(`[MVSep-Helper] Instrumental: ${downloadResult.instrumental ? (downloadResult.instrumental.byteLength / 1024).toFixed(1) + ' KB' : 'N/A'}`);
+    console.log(`[MVSep-Helper] Vocal: ${downloadResult.vocal ? (downloadResult.vocal.byteLength / 1024).toFixed(1) + ' KB' : 'N/A'}`);
 
     res.json({
       success: true,
-      title: cobaltResult.title || 'unknown',
-      duration: cobaltResult.duration || 0,
-      instrumental: downloadResult.instrumental
-        ? Buffer.from(downloadResult.instrumental).toString('base64')
-        : null,
-      vocal: downloadResult.vocal
-        ? Buffer.from(downloadResult.vocal).toString('base64')
-        : null,
+      title,
+      duration,
+      instrumental: downloadResult.instrumental ? Buffer.from(downloadResult.instrumental).toString('base64') : null,
+      vocal: downloadResult.vocal ? Buffer.from(downloadResult.vocal).toString('base64') : null,
       mimeType: 'audio/flac',
     });
 
@@ -130,76 +130,34 @@ app.post('/separate', async (req, res) => {
 });
 
 // ============================================================
-// FUNCION: DESCARGAR AUDIO VIA COBALT API
+// YT-DLP
 // ============================================================
 
-async function downloadViaCobalt(youtubeUrl, outputPath) {
-  console.log(`[Cobalt] Solicitando audio a: ${COBALT_API_URL}`);
-
-  const body = {
-    url: youtubeUrl,
-    downloadMode: 'audio',
-    audioFormat: 'mp3',
-  };
-  console.log(`[Cobalt] Request body:`, JSON.stringify(body));
-
-  const response = await fetch(COBALT_API_URL + '/', {
-    method: 'POST',
-    headers: {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
+async function runYtDlp(args) {
+  return new Promise((resolve, reject) => {
+    const cmd = process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
+    const child = execFile(cmd, args, {
+      maxBuffer: 100 * 1024 * 1024,
+      timeout: 120000,
+    }, (error, stdout, stderr) => {
+      if (error) {
+        if (error.code === 'ENOENT') {
+          reject(new Error('yt-dlp no esta instalado'));
+        } else {
+          reject(new Error(stderr.trim() || error.message));
+        }
+        return;
+      }
+      resolve(stdout);
+    });
+    child.on('error', (err) => {
+      reject(new Error(`Error al ejecutar yt-dlp: ${err.message}`));
+    });
   });
-
-  const data = await response.json();
-  console.log(`[Cobalt] Respuesta:`, JSON.stringify(data).substring(0, 500));
-
-  if (data.status === 'error') {
-    throw new Error(`Cobalt error: ${data.error?.code || data.text || 'unknown'}`);
-  }
-
-  let downloadUrl;
-  let title = 'unknown';
-  let duration = 0;
-
-  if (data.status === 'tunnel' || data.status === 'redirect') {
-    downloadUrl = data.url;
-    title = data.filename || 'unknown';
-  } else if (data.status === 'picker') {
-    if (data.picker && data.picker.length > 0) {
-      downloadUrl = data.picker[0].url;
-    } else if (data.audio) {
-      downloadUrl = data.audio;
-    }
-    title = data.filename || 'unknown';
-  } else if (data.status === 'local-processing') {
-    throw new Error('Cobalt requiere procesamiento local, no soportado en servidor');
-  } else {
-    throw new Error(`Cobalt status inesperado: ${data.status}`);
-  }
-
-  if (!downloadUrl) {
-    throw new Error('Cobalt no devolvió URL de descarga');
-  }
-
-  console.log(`[Cobalt] Descargando audio desde: ${downloadUrl.substring(0, 120)}...`);
-
-  const audioResponse = await fetch(downloadUrl);
-  if (!audioResponse.ok) {
-    throw new Error(`Error descargando audio: HTTP ${audioResponse.status}`);
-  }
-
-  const buffer = Buffer.from(await audioResponse.arrayBuffer());
-  fs.writeFileSync(outputPath, buffer);
-
-  console.log(`[Cobalt] Audio guardado: ${(buffer.length / 1024 / 1024).toFixed(2)} MB`);
-
-  return { title, duration };
 }
 
 // ============================================================
-// FUNCIONES MVSEP.COM
+// MVSEP.COM
 // ============================================================
 
 async function uploadToMvsep(audioPath, apiKey) {
@@ -217,11 +175,7 @@ async function uploadToMvsep(audioPath, apiKey) {
 
   console.log(`[MVSep-Helper] Subiendo ${(buffer.length / 1024 / 1024).toFixed(2)} MB a mvsep.com...`);
 
-  const response = await fetch(url, {
-    method: 'POST',
-    body: form,
-  });
-
+  const response = await fetch(url, { method: 'POST', body: form });
   const responseText = await response.text();
   console.log(`[MVSep-Helper] Respuesta API (${response.status}):`, responseText.substring(0, 500));
 
@@ -232,20 +186,18 @@ async function uploadToMvsep(audioPath, apiKey) {
   try {
     return JSON.parse(responseText);
   } catch (e) {
-    throw new Error(`Respuesta no es JSON válido: ${responseText.substring(0, 200)}`);
+    throw new Error(`Respuesta no es JSON: ${responseText.substring(0, 200)}`);
   }
 }
 
-async function pollMvsepJob(jobId, apiKey) {
+async function pollMvsepJob(jobId) {
   for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
     await sleep(POLL_INTERVAL_MS);
-
     try {
       const url = `${MVSEP_API_BASE}/separation/get?hash=${encodeURIComponent(jobId)}`;
       const response = await fetch(url);
-
       if (!response.ok) {
-        if (attempt === 0) console.log(`[MVSep-Helper] Poll status HTTP ${response.status}`);
+        if (attempt === 0) console.log(`[MVSep-Helper] Poll HTTP ${response.status}`);
         continue;
       }
 
@@ -268,12 +220,10 @@ async function pollMvsepJob(jobId, apiKey) {
       if (status === 'error' || status === 'failed') {
         return { success: false, error: data.message || data.error || 'Error en procesamiento' };
       }
-
     } catch (e) {
-      console.warn(`[MVSep-Helper] Error polling (intento ${attempt + 1}):`, e.message);
+      console.warn(`[MVSep-Helper] Poll error (${attempt + 1}):`, e.message);
     }
   }
-
   return { success: false, error: 'Tiempo de espera agotado' };
 }
 
@@ -309,15 +259,11 @@ async function downloadMvsepResults(downloadUrls, apiKey) {
   }
 
   if (!instrumentalUrl && !vocalUrl) {
-    console.log(`[MVSep-Helper] URLs de descarga (raw):`, JSON.stringify(downloadUrls).substring(0, 500));
+    console.log(`[MVSep-Helper] URLs raw:`, JSON.stringify(downloadUrls).substring(0, 500));
     const entries = Object.entries(downloadUrls);
-    const urls = entries.map(([k, val]) => typeof val === 'string' ? val : (val?.url || val?.link || val?.download_url || Object.values(val)[0]));
-    if (urls.length >= 2) {
-      instrumentalUrl = urls[0];
-      vocalUrl = urls[1];
-    } else if (urls.length === 1) {
-      vocalUrl = urls[0];
-    }
+    const urls = entries.map(([, val]) => typeof val === 'string' ? val : (val?.url || val?.link || val?.download_url || Object.values(val)[0]));
+    if (urls.length >= 2) { instrumentalUrl = urls[0]; vocalUrl = urls[1]; }
+    else if (urls.length === 1) { vocalUrl = urls[0]; }
   }
 
   const downloads = [];
@@ -329,13 +275,8 @@ async function downloadMvsepResults(downloadUrls, apiKey) {
     console.log(`[MVSep-Helper] Descargando vocal: ${fullUrl.substring(0, 120)}`);
     downloads.push(
       fetchWithAuth(fullUrl, apiKey).then(async (r) => {
-        console.log(`[MVSep-Helper] Vocal status: ${r.status}, content-type: ${r.headers.get('content-type')}`);
-        if (r.ok) {
-          result.vocal = await r.arrayBuffer();
-          console.log(`[MVSep-Helper] Vocal descargado: ${result.vocal.byteLength} bytes`);
-          const header = new Uint8Array(result.vocal.slice(0, 4));
-          console.log(`[MVSep-Helper] Vocal header hex: ${header[0].toString(16)} ${header[1].toString(16)} ${header[2].toString(16)} ${header[3].toString(16)}`);
-        }
+        console.log(`[MVSep-Helper] Vocal status: ${r.status}`);
+        if (r.ok) { result.vocal = await r.arrayBuffer(); console.log(`[MVSep-Helper] Vocal: ${result.vocal.byteLength} bytes`); }
       })
     );
   }
@@ -345,13 +286,8 @@ async function downloadMvsepResults(downloadUrls, apiKey) {
     console.log(`[MVSep-Helper] Descargando instrumental: ${fullUrl.substring(0, 120)}`);
     downloads.push(
       fetchWithAuth(fullUrl, apiKey).then(async (r) => {
-        console.log(`[MVSep-Helper] Instrumental status: ${r.status}, content-type: ${r.headers.get('content-type')}`);
-        if (r.ok) {
-          result.instrumental = await r.arrayBuffer();
-          console.log(`[MVSep-Helper] Instrumental descargado: ${result.instrumental.byteLength} bytes`);
-          const header = new Uint8Array(result.instrumental.slice(0, 4));
-          console.log(`[MVSep-Helper] Instrumental header hex: ${header[0].toString(16)} ${header[1].toString(16)} ${header[2].toString(16)} ${header[3].toString(16)}`);
-        }
+        console.log(`[MVSep-Helper] Instrumental status: ${r.status}`);
+        if (r.ok) { result.instrumental = await r.arrayBuffer(); console.log(`[MVSep-Helper] Instrumental: ${result.instrumental.byteLength} bytes`); }
       })
     );
   }
@@ -371,18 +307,18 @@ function sleep(ms) {
 }
 
 // ============================================================
-// INICIAR SERVIDOR
+// START
 // ============================================================
 
 app.listen(PORT, () => {
   console.log('');
   console.log('╔══════════════════════════════════════════════╗');
-  console.log('║       MVSep - Helper Server (Cobalt)        ║');
+  console.log('║       MVSep - Helper Server (yt-dlp)        ║');
   console.log('╠══════════════════════════════════════════════╣');
   console.log(`║  Puerto: ${PORT}                              ║`);
   console.log('║  Endpoint: POST /separate                    ║');
-  console.log('║  Source: Cobalt API (no yt-dlp needed)       ║');
+  console.log(`║  Cookies: ${YOUTUBE_COOKIES ? 'SI' : 'NO'}                                 ║`);
   console.log('╚══════════════════════════════════════════════╝');
   console.log('');
-  console.log('[MVSep-Helper] Servidor listo! Esperando peticiones...');
+  console.log('[MVSep-Helper] Servidor listo!');
 });
