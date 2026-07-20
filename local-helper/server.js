@@ -19,8 +19,10 @@ const PORT = process.env.PORT || 3456;
 const MVSEP_API_BASE = 'https://de.mvsep.com/api';
 const DEFAULT_API_KEY = process.env.MVSEP_API_KEY || '1Fy0mpljKMTlmesywS135hZ7OBq076';
 let COBALT_API_URL = process.env.COBALT_API_URL || 'https://api.cobalt.tools';
+console.log(`[Config] COBALT_API_URL raw: "${process.env.COBALT_API_URL}"`);
 if (!COBALT_API_URL.startsWith('http')) COBALT_API_URL = 'https://' + COBALT_API_URL;
 COBALT_API_URL = COBALT_API_URL.replace(/\/+$/, '');
+console.log(`[Config] COBALT_API_URL final: "${COBALT_API_URL}"`);
 const SEP_TYPE = 40; // BS Roformer
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLL_ATTEMPTS = 120;
