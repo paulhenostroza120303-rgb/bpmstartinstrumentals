@@ -17,8 +17,6 @@ const btnLogin = document.getElementById('btn-login');
 const btnRegister = document.getElementById('btn-register');
 const btnLogout = document.getElementById('btn-logout');
 const userEmail = document.getElementById('user-email');
-const apiInput = document.getElementById('api-key-input');
-const btnSave = document.getElementById('btn-save-key');
 const statusDot = document.getElementById('status-dot');
 const statusText = document.getElementById('status-text');
 const statusDetail = document.getElementById('status-detail');
@@ -40,7 +38,6 @@ async function initializePopup() {
       });
       if (res.ok) {
         showApp(result.auth_email);
-        if (result.mvsep_api_key) apiInput.value = result.mvsep_api_key;
         updateStatus();
         return;
       }
@@ -260,28 +257,12 @@ function setStatus(type, text, detail) {
 }
 
 // ============================================================
-// SAVE API KEY
-// ============================================================
-
-async function saveApiKey() {
-  const key = apiInput.value.trim();
-  if (!key) {
-    showToast('Ingresa una API key', true);
-    return;
-  }
-  await chrome.storage.sync.set({ mvsep_api_key: key });
-  showToast('API key guardada');
-  updateStatus();
-}
-
-// ============================================================
 // RESET
 // ============================================================
 
 async function resetExtension() {
   if (confirm('Restablecer toda la configuracion?')) {
     await chrome.storage.sync.clear();
-    apiInput.value = '';
     showAuth();
     showToast('Configuracion restablecida');
   }
@@ -302,7 +283,6 @@ function showToast(message, isError = false) {
 // EVENT LISTENERS
 // ============================================================
 
-btnSave.addEventListener('click', saveApiKey);
 btnReset.addEventListener('click', resetExtension);
 
 loginPassword.addEventListener('keydown', (e) => { if (e.key === 'Enter') btnLogin.click(); });

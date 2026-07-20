@@ -417,7 +417,6 @@ async function useLocalHelper(youtubeUrl, tabId, session) {
       },
       body: JSON.stringify({
         youtubeUrl,
-        apiKey,
       }),
     });
 
