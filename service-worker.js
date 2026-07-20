@@ -47,7 +47,7 @@ function bufferToBase64(buffer) {
 // MANEJO DE MENSAJES
 // ============================================================
 
-const resultChunks = new Map(); // tabId -> { chunks: [] }
+const resultChunks = new Map(); // tabId -> { vocal: [], instrumental: [] }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const handler = {
@@ -671,34 +671,53 @@ async function handleGetResults(sender) {
   }
 
   // API keys invertidas: result.vocal = instrumental real, result.instrumental = vocal real
-  const data = session.results.vocal || session.results.instrumental;
-  if (!data) {
-    return { success: false, error: 'No hay pista disponible' };
+  const instrumentalData = session.results.vocal;
+  const vocalData = session.results.instrumental;
+
+  if (!instrumentalData && !vocalData) {
+    return { success: false, error: 'No hay pistas disponibles' };
   }
 
-  // Dividir en chunks de 10 MB para evitar límite de 64 MB de Chrome messaging
-  const base64 = bufferToBase64(data);
   const CHUNK_SIZE = 10 * 1024 * 1024;
-  const chunks = [];
-  for (let i = 0; i < base64.length; i += CHUNK_SIZE) {
-    chunks.push(base64.slice(i, i + CHUNK_SIZE));
+  const chunks = { vocal: [], instrumental: [] };
+
+  if (instrumentalData) {
+    const base64 = bufferToBase64(instrumentalData);
+    for (let i = 0; i < base64.length; i += CHUNK_SIZE) {
+      chunks.instrumental.push(base64.slice(i, i + CHUNK_SIZE));
+    }
+  }
+
+  if (vocalData) {
+    const base64 = bufferToBase64(vocalData);
+    for (let i = 0; i < base64.length; i += CHUNK_SIZE) {
+      chunks.vocal.push(base64.slice(i, i + CHUNK_SIZE));
+    }
   }
 
   resultChunks.set(tabId, chunks);
-  console.log(`[MVSep] Pista dividida en ${chunks.length} chunks (${base64.length} bytes base64)`);
+  console.log(`[MVSep] Pistas divididas: instrumental=${chunks.instrumental.length} chunks, vocal=${chunks.vocal.length} chunks`);
 
   return {
     success: true,
-    totalChunks: chunks.length,
-    totalSize: data.byteLength,
+    totalChunksInstrumental: chunks.instrumental.length,
+    totalChunksVocal: chunks.vocal.length,
+    totalSizeInstrumental: instrumentalData ? instrumentalData.byteLength : 0,
+    totalSizeVocal: vocalData ? vocalData.byteLength : 0,
   };
 }
 
 async function handleGetChunk(message, sender) {
   const tabId = sender.tab?.id;
-  const chunks = resultChunks.get(tabId);
-  if (!chunks) {
+  const allChunks = resultChunks.get(tabId);
+  if (!allChunks) {
     return { success: false, error: 'No hay chunks disponibles' };
+  }
+
+  const track = message.track || 'instrumental';
+  const chunks = allChunks[track];
+  if (!chunks) {
+    return { success: false, error: `Pista "${track}" no disponible` };
   }
 
   const idx = message.chunkIndex;
@@ -711,6 +730,7 @@ async function handleGetChunk(message, sender) {
     chunk: chunks[idx],
     chunkIndex: idx,
     totalChunks: chunks.length,
+    track,
   };
 }
 

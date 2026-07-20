@@ -1,23 +1,27 @@
 // ============================================================
 // MVSep - Content Script (YouTube)
-// Panel flotante: solo modo Instrumental con player controlado
+// Panel flotante con mixer Vocal + Instrumental
 // ============================================================
 
 const state = {
   status: 'idle',
   message: '',
   progress: 0,
-  results: null,
   instrumentalBuffer: null,
+  vocalBuffer: null,
   youtubeVideo: null,
   youtubeMuted: false,
   isPanelVisible: true,
-  volume: 1,
   playing: false,
+  instrumentalVolume: 1,
+  vocalVolume: 1,
+  instrumentalMuted: false,
+  vocalMuted: false,
 };
 
 let panel = null;
-let separatedAudio = null;
+let instrumentalAudio = null;
+let vocalAudio = null;
 let timelineInterval = null;
 
 // ============================================================
@@ -54,8 +58,8 @@ function createPanel() {
       </div>
     </div>
     <div class="mvsep-body">
-      <div class="mvsep-section-title">Separaci\u00f3n de Audio</div>
-      <p class="mvsep-description">Obt\u00e9n solo la pista instrumental</p>
+      <div class="mvsep-section-title">Separacion de Audio</div>
+      <p class="mvsep-description">Obten instrumental y vocal separados</p>
 
       <div class="mvsep-state mvsep-state-idle">
         <button class="mvsep-btn-primary" id="mvsep-btn-separate">
@@ -106,7 +110,7 @@ function createPanel() {
             <polyline points="22 4 12 14.01 9 11.01"/>
           </svg>
         </div>
-        <span class="mvsep-success-text">\u00a1Instrumental listo!</span>
+        <span class="mvsep-success-text">Pistas listas!</span>
 
         <div class="mvsep-player">
           <button class="mvsep-play-btn" id="mvsep-play-btn">
@@ -124,24 +128,62 @@ function createPanel() {
           </div>
         </div>
 
-        <div class="mvsep-volume-control">
-          <label class="mvsep-volume-label">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
-              <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
-            </svg>
-          </label>
-          <input type="range" class="mvsep-volume-slider" id="mvsep-volume-slider" min="0" max="100" value="100">
+        <div class="mvsep-mixer">
+          <div class="mvsep-mixer-track mvsep-mixer-instrumental">
+            <div class="mvsep-mixer-label">
+              <span class="mvsep-mixer-dot instrumental"></span>
+              Instrumental
+            </div>
+            <input type="range" class="mvsep-mixer-slider instrumental" id="mvsep-slider-instrumental" min="0" max="100" value="100">
+            <button class="mvsep-mute-btn" id="mvsep-mute-instrumental" title="Silenciar instrumental">
+              <svg class="mvsep-mute-icon-on" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+              </svg>
+              <svg class="mvsep-mute-icon-off" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                <line x1="23" y1="9" x2="17" y2="15"/>
+                <line x1="17" y1="9" x2="23" y2="15"/>
+              </svg>
+            </button>
+          </div>
+
+          <div class="mvsep-mixer-track mvsep-mixer-vocal">
+            <div class="mvsep-mixer-label">
+              <span class="mvsep-mixer-dot vocal"></span>
+              Vocal
+            </div>
+            <input type="range" class="mvsep-mixer-slider vocal" id="mvsep-slider-vocal" min="0" max="100" value="100">
+            <button class="mvsep-mute-btn" id="mvsep-mute-vocal" title="Silenciar vocal">
+              <svg class="mvsep-mute-icon-on" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+              </svg>
+              <svg class="mvsep-mute-icon-off" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                <line x1="23" y1="9" x2="17" y2="15"/>
+                <line x1="17" y1="9" x2="23" y2="15"/>
+              </svg>
+            </button>
+          </div>
         </div>
 
         <div class="mvsep-actions-secondary">
-          <button class="mvsep-btn-secondary mvsep-btn-download-full" id="mvsep-btn-download">
+          <button class="mvsep-btn-secondary mvsep-btn-download-full" id="mvsep-btn-download-inst">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
               <polyline points="7 10 12 15 17 10"/>
               <line x1="12" y1="15" x2="12" y2="3"/>
             </svg>
             Descargar Instrumental
+          </button>
+          <button class="mvsep-btn-secondary mvsep-btn-download-full" id="mvsep-btn-download-vocal">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Descargar Vocal
           </button>
           <button class="mvsep-btn-secondary" id="mvsep-btn-separate-again">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -203,30 +245,44 @@ function setupEventListeners() {
   panel.querySelector('#mvsep-btn-stop')?.addEventListener('click', stopRecording);
   panel.querySelector('#mvsep-close-panel')?.addEventListener('click', hidePanel);
   panel.querySelector('#mvsep-toggle-pin')?.addEventListener('click', togglePin);
-  panel.querySelector('#mvsep-btn-download')?.addEventListener('click', downloadInstrumental);
 
-  panel.querySelector('#mvsep-volume-slider')?.addEventListener('input', (e) => {
-    setVolume(e.target.value / 100);
-  });
+  panel.querySelector('#mvsep-btn-download-inst')?.addEventListener('click', downloadInstrumental);
+  panel.querySelector('#mvsep-btn-download-vocal')?.addEventListener('click', downloadVocal);
 
-  // Player controls
   panel.querySelector('#mvsep-play-btn')?.addEventListener('click', togglePlay);
 
+  // Mixer sliders
+  panel.querySelector('#mvsep-slider-instrumental')?.addEventListener('input', (e) => {
+    setInstrumentalVolume(e.target.value / 100);
+  });
+  panel.querySelector('#mvsep-slider-vocal')?.addEventListener('input', (e) => {
+    setVocalVolume(e.target.value / 100);
+  });
+
+  // Mute buttons
+  panel.querySelector('#mvsep-mute-instrumental')?.addEventListener('click', toggleMuteInstrumental);
+  panel.querySelector('#mvsep-mute-vocal')?.addEventListener('click', toggleMuteVocal);
+
+  // Timeline
   const timeline = panel.querySelector('#mvsep-timeline');
   if (timeline) {
     let seeking = false;
 
     timeline.addEventListener('input', (e) => {
       seeking = true;
-      if (separatedAudio) {
-        const time = (e.target.value / 100) * separatedAudio.duration;
-        updateTimeDisplay(time, separatedAudio.duration);
+      const audio = instrumentalAudio || vocalAudio;
+      if (audio) {
+        const time = (e.target.value / 100) * audio.duration;
+        updateTimeDisplay(time, audio.duration);
       }
     });
 
     timeline.addEventListener('change', (e) => {
-      if (separatedAudio) {
-        separatedAudio.currentTime = (e.target.value / 100) * separatedAudio.duration;
+      const audio = instrumentalAudio || vocalAudio;
+      if (audio) {
+        const time = (e.target.value / 100) * audio.duration;
+        if (instrumentalAudio) instrumentalAudio.currentTime = time;
+        if (vocalAudio) vocalAudio.currentTime = time;
       }
       seeking = false;
     });
@@ -326,22 +382,81 @@ function setState(status, message = '', progress = 0) {
 }
 
 // ============================================================
+// MIXER: VOLUME / MUTE
+// ============================================================
+
+function setInstrumentalVolume(value) {
+  state.instrumentalVolume = value;
+  state.instrumentalMuted = value === 0;
+  if (instrumentalAudio) instrumentalAudio.volume = value;
+  updateMuteIcon('instrumental');
+}
+
+function setVocalVolume(value) {
+  state.vocalVolume = value;
+  state.vocalMuted = value === 0;
+  if (vocalAudio) vocalAudio.volume = value;
+  updateMuteIcon('vocal');
+}
+
+function toggleMuteInstrumental() {
+  if (state.instrumentalMuted) {
+    state.instrumentalMuted = false;
+    state.instrumentalVolume = state.instrumentalVolume || 1;
+    if (instrumentalAudio) instrumentalAudio.volume = state.instrumentalVolume;
+    const slider = panel?.querySelector('#mvsep-slider-instrumental');
+    if (slider) slider.value = state.instrumentalVolume * 100;
+  } else {
+    state.instrumentalMuted = true;
+    if (instrumentalAudio) instrumentalAudio.volume = 0;
+    const slider = panel?.querySelector('#mvsep-slider-instrumental');
+    if (slider) slider.value = 0;
+  }
+  updateMuteIcon('instrumental');
+}
+
+function toggleMuteVocal() {
+  if (state.vocalMuted) {
+    state.vocalMuted = false;
+    state.vocalVolume = state.vocalVolume || 1;
+    if (vocalAudio) vocalAudio.volume = state.vocalVolume;
+    const slider = panel?.querySelector('#mvsep-slider-vocal');
+    if (slider) slider.value = state.vocalVolume * 100;
+  } else {
+    state.vocalMuted = true;
+    if (vocalAudio) vocalAudio.volume = 0;
+    const slider = panel?.querySelector('#mvsep-slider-vocal');
+    if (slider) slider.value = 0;
+  }
+  updateMuteIcon('vocal');
+}
+
+function updateMuteIcon(track) {
+  const isMuted = track === 'instrumental' ? state.instrumentalMuted : state.vocalMuted;
+  const btn = panel?.querySelector(`#mvsep-mute-${track}`);
+  if (!btn) return;
+  const iconOn = btn.querySelector('.mvsep-mute-icon-on');
+  const iconOff = btn.querySelector('.mvsep-mute-icon-off');
+  if (iconOn) iconOn.style.display = isMuted ? 'none' : 'block';
+  if (iconOff) iconOff.style.display = isMuted ? 'block' : 'none';
+}
+
+// ============================================================
 // PLAYER: PLAY / PAUSE / SEEK / TIMELINE
 // ============================================================
 
 function togglePlay() {
-  if (!separatedAudio) return;
+  const audio = instrumentalAudio || vocalAudio;
+  if (!audio) return;
 
-  if (separatedAudio.paused) {
-    playInstrumental();
+  if (audio.paused) {
+    playMixer();
   } else {
-    pauseInstrumental();
+    pauseMixer();
   }
 }
 
-function playInstrumental() {
-  if (!separatedAudio) return;
-
+function playMixer() {
   // Silenciar YouTube
   const video = state.youtubeVideo;
   if (video) {
@@ -349,8 +464,17 @@ function playInstrumental() {
     state.youtubeMuted = true;
   }
 
-  separatedAudio.volume = state.volume;
-  separatedAudio.play().then(() => {
+  if (instrumentalAudio) {
+    instrumentalAudio.volume = state.instrumentalMuted ? 0 : state.instrumentalVolume;
+  }
+  if (vocalAudio) {
+    vocalAudio.volume = state.vocalMuted ? 0 : state.vocalVolume;
+  }
+
+  const audioToPlay = instrumentalAudio || vocalAudio;
+  if (!audioToPlay) return;
+
+  audioToPlay.play().then(() => {
     state.playing = true;
     updatePlayButton();
     startTimelineUpdate();
@@ -359,24 +483,27 @@ function playInstrumental() {
   });
 }
 
-function pauseInstrumental() {
-  if (!separatedAudio) return;
-
-  separatedAudio.pause();
+function pauseMixer() {
+  if (instrumentalAudio) instrumentalAudio.pause();
+  if (vocalAudio) vocalAudio.pause();
   state.playing = false;
   updatePlayButton();
   stopTimelineUpdate();
 }
 
 function stopPlayback() {
-  if (separatedAudio) {
-    separatedAudio.pause();
-    separatedAudio.currentTime = 0;
+  if (instrumentalAudio) {
+    instrumentalAudio.pause();
+    instrumentalAudio.currentTime = 0;
+  }
+  if (vocalAudio) {
+    vocalAudio.pause();
+    vocalAudio.currentTime = 0;
   }
   state.playing = false;
   updatePlayButton();
   stopTimelineUpdate();
-  updateTimeDisplay(0, separatedAudio?.duration || 0);
+  updateTimeDisplay(0, instrumentalAudio?.duration || vocalAudio?.duration || 0);
   updateTimeline(0);
 }
 
@@ -402,16 +529,15 @@ function stopTimelineUpdate() {
 }
 
 function updateTimelineProgress() {
-  if (!separatedAudio || panel?.querySelector?.('._timelineSeeking')?.()) return;
+  const audio = instrumentalAudio || vocalAudio;
+  if (!audio) return;
+  if (panel?._timelineSeeking?.()) return;
 
-  const current = separatedAudio.currentTime;
-  const total = separatedAudio.duration;
+  const current = audio.currentTime;
+  const total = audio.duration;
   if (!total || !isFinite(total)) return;
 
-  const seeking = panel?._timelineSeeking?.();
-  if (!seeking) {
-    updateTimeline((current / total) * 100);
-  }
+  updateTimeline((current / total) * 100);
   updateTimeDisplay(current, total);
 }
 
@@ -435,42 +561,62 @@ function formatTime(sec) {
 }
 
 // ============================================================
-// SEPARATED AUDIO: crear Blob URL y Audio element
+// AUDIO: crear Blob URLs y Audio elements
 // ============================================================
 
-function setupSeparatedAudio(arrayBuffer) {
-  // Detener anterior
-  if (separatedAudio) {
-    separatedAudio.pause();
-    separatedAudio.src = '';
-    separatedAudio = null;
-  }
+function setupAudio(arrayBuffer, type) {
+  const blob = new Blob([arrayBuffer], { type: 'audio/flac' });
+  const url = URL.createObjectURL(blob);
+  const audio = new Audio(url);
+  audio.preload = 'auto';
+  return audio;
+}
+
+function setupMixerAudio(instrumentalBuf, vocalBuf) {
+  stopPlayback();
+
+  if (instrumentalAudio) { instrumentalAudio.src = ''; instrumentalAudio = null; }
+  if (vocalAudio) { vocalAudio.src = ''; vocalAudio = null; }
   stopTimelineUpdate();
 
-  const blob = new Blob([arrayBuffer], { type: 'audio/mpeg' });
-  const url = URL.createObjectURL(blob);
+  if (instrumentalBuf) {
+    instrumentalAudio = setupAudio(instrumentalBuf, 'instrumental');
+    instrumentalAudio.volume = state.instrumentalMuted ? 0 : state.instrumentalVolume;
+  }
 
-  separatedAudio = new Audio(url);
-  separatedAudio.preload = 'auto';
+  if (vocalBuf) {
+    vocalAudio = setupAudio(vocalBuf, 'vocal');
+    vocalAudio.volume = state.vocalMuted ? 0 : state.vocalVolume;
+  }
 
-  separatedAudio.addEventListener('loadedmetadata', () => {
-    updateTimeDisplay(0, separatedAudio.duration);
-    console.log(`[MVSep] Audio cargado: ${formatTime(separatedAudio.duration)}`);
+  const primary = instrumentalAudio || vocalAudio;
+
+  primary.addEventListener('loadedmetadata', () => {
+    updateTimeDisplay(0, primary.duration);
+    console.log(`[MVSep] Audio cargado: ${formatTime(primary.duration)}`);
   });
 
-  separatedAudio.addEventListener('ended', () => {
+  primary.addEventListener('ended', () => {
+    if (vocalAudio && !vocalAudio.paused) vocalAudio.pause();
     state.playing = false;
     updatePlayButton();
     stopTimelineUpdate();
     updateTimeline(0);
-    updateTimeDisplay(0, separatedAudio.duration);
+    updateTimeDisplay(0, primary.duration);
   });
 
-  separatedAudio.addEventListener('error', (e) => {
+  primary.addEventListener('error', (e) => {
     console.error('[MVSep] Error en Audio:', e);
     state.playing = false;
     updatePlayButton();
   });
+
+  // Sync vocal with instrumental seeking
+  if (instrumentalAudio && vocalAudio) {
+    instrumentalAudio.addEventListener('seeking', () => {
+      vocalAudio.currentTime = instrumentalAudio.currentTime;
+    });
+  }
 }
 
 // ============================================================
@@ -480,7 +626,7 @@ function setupSeparatedAudio(arrayBuffer) {
 async function startSeparation() {
   const video = document.querySelector('video');
   if (!video) {
-    setState('error', 'No se encontr\u00f3 un video de YouTube.');
+    setState('error', 'No se encontro un video de YouTube.');
     return;
   }
 
@@ -539,23 +685,11 @@ function stopTimer() {
 }
 
 // ============================================================
-// VOLUME
-// ============================================================
-
-function setVolume(value) {
-  state.volume = value;
-  if (separatedAudio) {
-    separatedAudio.volume = value;
-  }
-}
-
-// ============================================================
 // DOWNLOAD
 // ============================================================
 
 function downloadInstrumental() {
   if (!state.instrumentalBuffer) return;
-
   const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
   const blob = new Blob([state.instrumentalBuffer], { type: 'audio/flac' });
   const url = URL.createObjectURL(blob);
@@ -566,8 +700,20 @@ function downloadInstrumental() {
   URL.revokeObjectURL(url);
 }
 
+function downloadVocal() {
+  if (!state.vocalBuffer) return;
+  const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
+  const blob = new Blob([state.vocalBuffer], { type: 'audio/flac' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `vocal_${timestamp}.flac`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 // ============================================================
-// COMUNICACIÓN CON SERVICE WORKER
+// COMUNICACION CON SERVICE WORKER
 // ============================================================
 
 chrome.runtime.onMessage.addListener((message) => {
@@ -590,43 +736,56 @@ function base64ToArrayBuffer(base64) {
   return bytes.buffer;
 }
 
+async function receiveTrackChunks(track) {
+  const meta = await chrome.runtime.sendMessage({ type: 'GET_RESULTS' });
+  if (!meta?.success) return null;
+
+  const totalChunksKey = track === 'vocal' ? 'totalChunksVocal' : 'totalChunksInstrumental';
+  const totalChunks = meta[totalChunksKey] || 0;
+  if (totalChunks === 0) return null;
+
+  let base64 = '';
+  for (let i = 0; i < totalChunks; i++) {
+    const chunkResp = await chrome.runtime.sendMessage({ type: 'GET_CHUNK', chunkIndex: i, track });
+    if (!chunkResp?.success) {
+      setState('error', `Error al obtener chunk ${i} de ${track}`);
+      return null;
+    }
+    base64 += chunkResp.chunk;
+  }
+
+  return base64ToArrayBuffer(base64);
+}
+
 async function handleSeparationComplete(message) {
-  console.log('[MVSep] Separaci\u00f3n completada, pidiendo resultados...');
-  setState('complete', message || '\u00a1Instrumental listo!');
+  console.log('[MVSep] Separacion completada, pidiendo resultados...');
+  setState('complete', message || 'Pistas listas!');
 
   try {
-    // 1. Obtener metadata (cuántos chunks hay)
-    const meta = await chrome.runtime.sendMessage({ type: 'GET_RESULTS' });
+    const instrumentalBuffer = await receiveTrackChunks('instrumental');
+    const vocalBuffer = await receiveTrackChunks('vocal');
 
-    if (!meta?.success) {
-      setState('error', 'Error: ' + (meta?.error || 'desconocido'));
+    if (!instrumentalBuffer && !vocalBuffer) {
+      setState('error', 'No se recibieron pistas');
       return;
     }
 
-    // 2. Pedir cada chunk y reensamblar
-    let base64 = '';
-    for (let i = 0; i < meta.totalChunks; i++) {
-      const chunkResp = await chrome.runtime.sendMessage({ type: 'GET_CHUNK', chunkIndex: i });
-      if (!chunkResp?.success) {
-        setState('error', 'Error al obtener chunk ' + i);
-        return;
-      }
-      base64 += chunkResp.chunk;
-    }
+    state.instrumentalBuffer = instrumentalBuffer;
+    state.vocalBuffer = vocalBuffer;
 
-    // 3. Decodificar base64 a ArrayBuffer
-    state.instrumentalBuffer = base64ToArrayBuffer(base64);
-    console.log(`[MVSep] Instrumental recibido: ${state.instrumentalBuffer.byteLength} bytes (${meta.totalChunks} chunks)`);
-    setupSeparatedAudio(state.instrumentalBuffer);
+    if (instrumentalBuffer) console.log(`[MVSep] Instrumental: ${instrumentalBuffer.byteLength} bytes`);
+    if (vocalBuffer) console.log(`[MVSep] Vocal: ${vocalBuffer.byteLength} bytes`);
+
+    setupMixerAudio(instrumentalBuffer, vocalBuffer);
 
   } catch (err) {
     console.error('[MVSep] Error:', err);
-    setState('error', 'Error de comunicaci\u00f3n: ' + err.message);
+    setState('error', 'Error de comunicacion: ' + err.message);
   }
 }
 
 // ============================================================
-// BOTÓN EN YOUTUBE
+// BOTON EN YOUTUBE
 // ============================================================
 
 function injectYouTubeButton() {
