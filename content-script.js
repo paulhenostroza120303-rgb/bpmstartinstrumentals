@@ -654,6 +654,16 @@ function updateTimelineProgress() {
   const total = ref.duration;
   if (!total || !isFinite(total)) return;
 
+  // Sync all stems to prevent drift
+  stems.forEach(s => {
+    if (s.audio && s.audio !== ref && !s.audio.paused) {
+      const drift = Math.abs(s.audio.currentTime - current);
+      if (drift > 0.05) {
+        s.audio.currentTime = current;
+      }
+    }
+  });
+
   updateTimeline((current / total) * 100);
   updateTimeDisplay(current, total);
 
@@ -752,7 +762,12 @@ function setupMixerAudio() {
 async function startSeparation() {
   const video = document.querySelector('video');
   if (!video) {
-    setState('error', 'No se encontro un video de YouTube.');
+    setState('error', 'Abre un video de YouTube primero.');
+    return;
+  }
+
+  if (!window.location.hostname.includes('youtube.com')) {
+    setState('error', 'Esta funcion solo funciona en YouTube.');
     return;
   }
 
