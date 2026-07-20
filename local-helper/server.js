@@ -18,31 +18,56 @@ const COOKIES_PATH = path.join(__dirname, 'cookies.txt');
 const JWT_SECRET = process.env.JWT_SECRET || 'bpmstart_secret_change_me_2026';
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || '').toLowerCase();
 
+if (!fs.existsSync(TEMP_DIR)) {
+  fs.mkdirSync(TEMP_DIR, { recursive: true });
+}
+
 // ============================================================
 // POSTGRESQL
 // ============================================================
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL?.includes('railway') ? { rejectUnauthorized: false } : false,
-});
+let pool = null;
+let useDB = false;
 
 async function initDB() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      email TEXT UNIQUE NOT NULL,
-      password TEXT NOT NULL,
-      approved BOOLEAN DEFAULT FALSE,
-      admin BOOLEAN DEFAULT FALSE,
-      created_at TEXT DEFAULT NOW()::TEXT
-    )
-  `);
-  console.log('[DB] Tabla users inicializada');
+  if (!process.env.DATABASE_URL) {
+    console.log('[DB] Sin DATABASE_URL — usando almacenamiento en memoria');
+    return;
+  }
+  try {
+    pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: { rejectUnauthorized: false },
+    });
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        email TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL,
+        approved BOOLEAN DEFAULT FALSE,
+        admin BOOLEAN DEFAULT FALSE,
+        created_at TEXT DEFAULT NOW()::TEXT
+      )
+    `);
+    useDB = true;
+    console.log('[DB] PostgreSQL conectado');
+  } catch (e) {
+    console.error('[DB] Error conectando PostgreSQL:', e.message);
+    console.log('[DB] Usando almacenamiento en memoria');
+    pool = null;
+    useDB = false;
+  }
 }
 
 function isAdmin(email) {
   return ADMIN_EMAIL && email.toLowerCase() === ADMIN_EMAIL;
+}
+
+// In-memory fallback when PostgreSQL is not available
+let memUsers = [];
+
+function memFindUser(email) {
+  return memUsers.find(u => u.email === email.toLowerCase());
 }
 
 // ============================================================
@@ -109,9 +134,15 @@ app.post('/register', async (req, res) => {
     return res.status(400).json({ success: false, error: 'Email invalido' });
   }
 
-  const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email.toLowerCase()]);
-  if (existing.rows.length > 0) {
-    return res.status(409).json({ success: false, error: 'Este email ya esta registrado' });
+  if (useDB) {
+    const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email.toLowerCase()]);
+    if (existing.rows.length > 0) {
+      return res.status(409).json({ success: false, error: 'Este email ya esta registrado' });
+    }
+  } else {
+    if (memFindUser(email)) {
+      return res.status(409).json({ success: false, error: 'Este email ya esta registrado' });
+    }
   }
 
   const hash = await bcrypt.hash(password, 10);
@@ -119,10 +150,14 @@ app.post('/register', async (req, res) => {
   const userAdmin = isAdmin(email);
   const approved = userAdmin;
 
-  await pool.query(
-    'INSERT INTO users (id, email, password, approved, admin) VALUES ($1, $2, $3, $4, $5)',
-    [id, email.toLowerCase(), hash, approved, userAdmin]
-  );
+  if (useDB) {
+    await pool.query(
+      'INSERT INTO users (id, email, password, approved, admin) VALUES ($1, $2, $3, $4, $5)',
+      [id, email.toLowerCase(), hash, approved, userAdmin]
+    );
+  } else {
+    memUsers.push({ id, email: email.toLowerCase(), password: hash, approved, admin: userAdmin, created_at: new Date().toISOString() });
+  }
 
   const token = jwt.sign({ id, email: email.toLowerCase() }, JWT_SECRET, { expiresIn: '30d' });
 
@@ -137,8 +172,13 @@ app.post('/login', async (req, res) => {
     return res.status(400).json({ success: false, error: 'Email y password requeridos' });
   }
 
-  const result = await pool.query('SELECT * FROM users WHERE email = $1', [email.toLowerCase()]);
-  const user = result.rows[0];
+  let user;
+  if (useDB) {
+    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email.toLowerCase()]);
+    user = result.rows[0];
+  } else {
+    user = memFindUser(email);
+  }
 
   if (!user) {
     return res.status(401).json({ success: false, error: 'Email o password incorrecto' });
@@ -162,8 +202,13 @@ app.post('/login', async (req, res) => {
 });
 
 app.get('/verify', authMiddleware, async (req, res) => {
-  const result = await pool.query('SELECT * FROM users WHERE email = $1', [req.user.email]);
-  const user = result.rows[0];
+  let user;
+  if (useDB) {
+    const result = await pool.query('SELECT * FROM users WHERE email = $1', [req.user.email]);
+    user = result.rows[0];
+  } else {
+    user = memFindUser(req.user.email);
+  }
   res.json({
     success: true,
     email: req.user.email,
@@ -177,26 +222,27 @@ app.get('/verify', authMiddleware, async (req, res) => {
 // ============================================================
 
 app.get('/admin/users', authMiddleware, adminMiddleware, async (req, res) => {
-  const result = await pool.query('SELECT id, email, approved, admin, created_at FROM users ORDER BY created_at DESC');
-  const list = result.rows.map(u => ({
-    id: u.id,
-    email: u.email,
-    approved: u.approved || false,
-    admin: u.admin || false,
-    createdAt: u.created_at,
-  }));
+  let list;
+  if (useDB) {
+    const result = await pool.query('SELECT id, email, approved, admin, created_at FROM users ORDER BY created_at DESC');
+    list = result.rows.map(u => ({ id: u.id, email: u.email, approved: u.approved, admin: u.admin, createdAt: u.created_at }));
+  } else {
+    list = memUsers.map(u => ({ id: u.id, email: u.email, approved: u.approved, admin: u.admin, createdAt: u.created_at }));
+  }
   res.json({ success: true, users: list });
 });
 
 app.post('/admin/approve', authMiddleware, adminMiddleware, async (req, res) => {
   const { email } = req.body;
-  if (!email) {
-    return res.status(400).json({ success: false, error: 'Email requerido' });
-  }
+  if (!email) return res.status(400).json({ success: false, error: 'Email requerido' });
 
-  const result = await pool.query('UPDATE users SET approved = true WHERE email = $1 RETURNING email', [email.toLowerCase()]);
-  if (result.rowCount === 0) {
-    return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+  if (useDB) {
+    const result = await pool.query('UPDATE users SET approved = true WHERE email = $1 RETURNING email', [email.toLowerCase()]);
+    if (result.rowCount === 0) return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+  } else {
+    const user = memFindUser(email);
+    if (!user) return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+    user.approved = true;
   }
 
   console.log(`[Admin] Usuario aprobado: ${email.toLowerCase()}`);
@@ -205,17 +251,16 @@ app.post('/admin/approve', authMiddleware, adminMiddleware, async (req, res) => 
 
 app.post('/admin/revoke', authMiddleware, adminMiddleware, async (req, res) => {
   const { email } = req.body;
-  if (!email) {
-    return res.status(400).json({ success: false, error: 'Email requerido' });
-  }
+  if (!email) return res.status(400).json({ success: false, error: 'Email requerido' });
+  if (isAdmin(email)) return res.status(400).json({ success: false, error: 'No puedes revocar al admin' });
 
-  if (isAdmin(email)) {
-    return res.status(400).json({ success: false, error: 'No puedes revocar al admin' });
-  }
-
-  const result = await pool.query('UPDATE users SET approved = false WHERE email = $1 RETURNING email', [email.toLowerCase()]);
-  if (result.rowCount === 0) {
-    return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+  if (useDB) {
+    const result = await pool.query('UPDATE users SET approved = false WHERE email = $1 RETURNING email', [email.toLowerCase()]);
+    if (result.rowCount === 0) return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+  } else {
+    const user = memFindUser(email);
+    if (!user) return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+    user.approved = false;
   }
 
   console.log(`[Admin] Acceso revocado: ${email.toLowerCase()}`);
@@ -224,17 +269,16 @@ app.post('/admin/revoke', authMiddleware, adminMiddleware, async (req, res) => {
 
 app.post('/admin/delete', authMiddleware, adminMiddleware, async (req, res) => {
   const { email } = req.body;
-  if (!email) {
-    return res.status(400).json({ success: false, error: 'Email requerido' });
-  }
+  if (!email) return res.status(400).json({ success: false, error: 'Email requerido' });
+  if (isAdmin(email)) return res.status(400).json({ success: false, error: 'No puedes eliminar al admin' });
 
-  if (isAdmin(email)) {
-    return res.status(400).json({ success: false, error: 'No puedes eliminar al admin' });
-  }
-
-  const result = await pool.query('DELETE FROM users WHERE email = $1 RETURNING email', [email.toLowerCase()]);
-  if (result.rowCount === 0) {
-    return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+  if (useDB) {
+    const result = await pool.query('DELETE FROM users WHERE email = $1 RETURNING email', [email.toLowerCase()]);
+    if (result.rowCount === 0) return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+  } else {
+    const idx = memUsers.findIndex(u => u.email === email.toLowerCase());
+    if (idx === -1) return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+    memUsers.splice(idx, 1);
   }
 
   console.log(`[Admin] Usuario eliminado: ${email.toLowerCase()}`);
@@ -246,8 +290,13 @@ app.post('/admin/delete', authMiddleware, adminMiddleware, async (req, res) => {
 // ============================================================
 
 app.post('/separate', authMiddleware, async (req, res) => {
-  const userResult = await pool.query('SELECT approved FROM users WHERE email = $1', [req.user.email]);
-  const user = userResult.rows[0];
+  let user;
+  if (useDB) {
+    const userResult = await pool.query('SELECT approved FROM users WHERE email = $1', [req.user.email]);
+    user = userResult.rows[0];
+  } else {
+    user = memFindUser(req.user.email);
+  }
 
   if (!user || (!user.approved && !isAdmin(req.user.email))) {
     return res.status(403).json({
@@ -541,11 +590,15 @@ app.listen(PORT, async () => {
   console.log(`║  Puerto: ${PORT}                              ║`);
   console.log(`║  Admin:  ${ADMIN_EMAIL || 'NO CONFIGURADO'}           ║`);
   console.log('║  Auth:   register + login + admin approval   ║');
-  console.log(`║  DB:     PostgreSQL                          ║`);
+  console.log(`║  DB:     ${useDB ? 'PostgreSQL' : 'Memoria (sin DATABASE_URL)'}`.padEnd(47) + '║');
   console.log(`║  Cookies: ${YOUTUBE_COOKIES ? 'SI' : 'NO'}                                 ║`);
   console.log('╚══════════════════════════════════════════════╝');
   console.log('');
-  const result = await pool.query('SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE approved = true) as approved FROM users');
-  const { total, approved } = result.rows[0];
-  console.log(`[MVSep-Helper] ${total} usuarios (${approved} aprobados)`);
+  if (useDB) {
+    const result = await pool.query('SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE approved = true) as approved FROM users');
+    const { total, approved } = result.rows[0];
+    console.log(`[MVSep-Helper] ${total} usuarios (${approved} aprobados)`);
+  } else {
+    console.log(`[MVSep-Helper] ${memUsers.length} usuarios (memoria)`);
+  }
 });
