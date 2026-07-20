@@ -1,7 +1,7 @@
 {
   "name": "mvsep-local-helper",
   "version": "1.0.0",
-  "description": "Servidor local para MVSep: descarga audio de YouTube y lo envía a mvsep.com para separación",
+  "description": "Servidor helper para MVSep: descarga audio via Cobalt API y lo envía a mvsep.com para separación",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
