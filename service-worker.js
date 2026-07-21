@@ -6,7 +6,7 @@
 
 const MVSEP_API_BASE = 'https://de.mvsep.com/api';
 const DEFAULT_API_KEY = '1Fy0mpljKMTlmesywS135hZ7OBq076';
-const SEP_TYPE = 40; // BS Roformer (vocals, instrumental) - keys correctas
+const SEP_TYPE = 63; // BS Roformer SW (vocals, other)
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLL_ATTEMPTS = 120; // 6 minutos máximo de espera
 
@@ -616,7 +616,7 @@ async function downloadMvsepResults(downloadUrls, apiKey) {
   const result = { success: false, instrumental: null, vocal: null };
   const downloads = [];
 
-  const instrumentalKeys = ['other', 'instrumental', 'drums', 'bass', 'accompaniment', 'music', 'no_vocals'];
+  const instrumentalKeys = ['other', 'instrumental', 'accompaniment', 'music', 'no_vocals'];
   const vocalKeys = ['vocals', 'voice', 'vocal'];
 
   let instrumentalUrl = null;
