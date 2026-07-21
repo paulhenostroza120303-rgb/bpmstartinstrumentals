@@ -10,7 +10,7 @@ const { Pool } = require('pg');
 const PORT = process.env.PORT || 3456;
 const MVSEP_API_BASE = 'https://de.mvsep.com/api';
 const DEFAULT_API_KEY = process.env.MVSEP_API_KEY || '1Fy0mpljKMTlmesywS135hZ7OBq076';
-const SEP_TYPE = 63; // BS Roformer SW (vocals, bass, drums, guitar, piano, other)
+const SEP_TYPE = 40;
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLL_ATTEMPTS = 120;
 const TEMP_DIR = path.join(__dirname, 'temp');
@@ -536,7 +536,7 @@ function extractDownloadUrls(data) {
 async function downloadMvsepResults(downloadUrls, apiKey) {
   const result = { success: false, instrumental: null, vocal: null };
 
-  const instrumentalKeys = ['other', 'instrumental', 'accompaniment', 'music', 'no_vocals'];
+  const instrumentalKeys = ['other', 'instrumental', 'drums', 'bass', 'accompaniment', 'music', 'no_vocals'];
   const vocalKeys = ['vocals', 'voice', 'vocal'];
 
   let instrumentalUrl = null;
