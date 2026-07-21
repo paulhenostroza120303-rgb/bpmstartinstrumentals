@@ -9,7 +9,13 @@ const { Pool } = require('pg');
 
 const PORT = process.env.PORT || 3456;
 const MVSEP_API_BASE = 'https://de.mvsep.com/api';
-const DEFAULT_API_KEY = process.env.MVSEP_API_KEY || '1Fy0mpljKMTlmesywS135hZ7OBq076';
+const API_KEYS = (process.env.MVSEP_API_KEY || '1Fy0mpljKMTlmesywS135hZ7OBq076').split(',').map(k => k.trim()).filter(Boolean);
+let currentKeyIndex = 0;
+function getNextApiKey() {
+  const key = API_KEYS[currentKeyIndex % API_KEYS.length];
+  currentKeyIndex = (currentKeyIndex + 1) % API_KEYS.length;
+  return key;
+}
 const SEP_TYPE = 40;
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLL_ATTEMPTS = 120;
@@ -311,7 +317,7 @@ app.post('/separate', authMiddleware, async (req, res) => {
     return res.status(400).json({ success: false, error: 'Falta youtubeUrl' });
   }
 
-  const mvsepKey = DEFAULT_API_KEY;
+  const mvsepKey = getNextApiKey();
   console.log(`[MVSep-Helper] Usuario: ${req.user.email} | Descargando: ${youtubeUrl}`);
   const jobId = 'mvsep_' + Date.now();
   const audioPath = path.join(TEMP_DIR, `${jobId}.mp3`);
@@ -438,6 +444,7 @@ async function runYtDlp(args) {
 async function uploadToMvsep(audioPath, apiKey) {
   const MAX_RETRIES = 6;
   const RETRY_WAIT_MS = 30000; // 30 segundos
+  let currentKey = apiKey;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     const form = new FormData();
@@ -446,7 +453,7 @@ async function uploadToMvsep(audioPath, apiKey) {
     form.append('audiofile', blob, 'audio.flac');
 
     const params = new URLSearchParams({
-      api_token: apiKey,
+      api_token: currentKey,
       sep_type: String(SEP_TYPE),
       output_format: '2',
     });
@@ -464,6 +471,14 @@ async function uploadToMvsep(audioPath, apiKey) {
       } catch (e) {
         throw new Error(`Respuesta no es JSON: ${responseText.substring(0, 200)}`);
       }
+    }
+
+    // Rate limit: rotar key y reintentar
+    if (response.status === 429 && API_KEYS.length > 1 && attempt < MAX_RETRIES) {
+      currentKey = getNextApiKey();
+      console.log(`[MVSep-Helper] Rate limit 429. Rotando a siguiente key...`);
+      await sleep(5000);
+      continue;
     }
 
     // Verificar si es error de cola (ya hay archivo en proceso)
@@ -565,10 +580,16 @@ async function downloadMvsepResults(downloadUrls, apiKey) {
     const fullUrl = urlStr.startsWith('http') ? urlStr : baseUrl + urlStr;
     console.log(`[MVSep-Helper] Descargando vocal: ${fullUrl.substring(0, 120)}`);
     downloads.push(
-      fetchWithAuth(fullUrl, apiKey).then(async (r) => {
-        console.log(`[MVSep-Helper] Vocal status: ${r.status}`);
-        if (r.ok) { result.vocal = await r.arrayBuffer(); console.log(`[MVSep-Helper] Vocal: ${result.vocal.byteLength} bytes`); }
-      })
+      (async () => {
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const key = attempt === 0 ? apiKey : getNextApiKey();
+          const r = await fetchWithAuth(fullUrl, key);
+          console.log(`[MVSep-Helper] Vocal status: ${r.status}`);
+          if (r.ok) { result.vocal = await r.arrayBuffer(); console.log(`[MVSep-Helper] Vocal: ${result.vocal.byteLength} bytes`); return; }
+          if (r.status === 429 && API_KEYS.length > 1) { console.log(`[MVSep-Helper] Vocal 429, rotando key...`); await sleep(2000); continue; }
+          return;
+        }
+      })()
     );
   }
   if (instrumentalUrl) {
@@ -576,10 +597,16 @@ async function downloadMvsepResults(downloadUrls, apiKey) {
     const fullUrl = urlStr.startsWith('http') ? urlStr : baseUrl + urlStr;
     console.log(`[MVSep-Helper] Descargando instrumental: ${fullUrl.substring(0, 120)}`);
     downloads.push(
-      fetchWithAuth(fullUrl, apiKey).then(async (r) => {
-        console.log(`[MVSep-Helper] Instrumental status: ${r.status}`);
-        if (r.ok) { result.instrumental = await r.arrayBuffer(); console.log(`[MVSep-Helper] Instrumental: ${result.instrumental.byteLength} bytes`); }
-      })
+      (async () => {
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const key = attempt === 0 ? apiKey : getNextApiKey();
+          const r = await fetchWithAuth(fullUrl, key);
+          console.log(`[MVSep-Helper] Instrumental status: ${r.status}`);
+          if (r.ok) { result.instrumental = await r.arrayBuffer(); console.log(`[MVSep-Helper] Instrumental: ${result.instrumental.byteLength} bytes`); return; }
+          if (r.status === 429 && API_KEYS.length > 1) { console.log(`[MVSep-Helper] Instrumental 429, rotando key...`); await sleep(2000); continue; }
+          return;
+        }
+      })()
     );
   }
 
@@ -619,6 +646,7 @@ app.listen(PORT, async () => {
   console.log(`║  Admin:  ${ADMIN_EMAIL || 'NO CONFIGURADO'}           ║`);
   console.log('║  Auth:   register + login + admin approval   ║');
   console.log(`║  DB:     ${useDB ? 'PostgreSQL' : 'Memoria (sin DATABASE_URL)'}`.padEnd(47) + '║');
+  console.log(`║  Keys:   ${API_KEYS.length} API key(s) (round-robin)          ║`);
   console.log(`║  Cookies: ${YOUTUBE_COOKIES ? 'SI' : 'NO'}                                 ║`);
   console.log('╚══════════════════════════════════════════════╝');
   console.log('');
