@@ -486,9 +486,13 @@ async function uploadToMvsep(audioPath, apiKey) {
                          responseText.includes('already have');
 
     if (isQueueError && attempt < MAX_RETRIES) {
-      const waitSec = RETRY_WAIT_MS / 1000;
-      console.log(`[MVSep-Helper] Cola ocupada. Esperando ${waitSec}s antes de reintentar (${attempt}/${MAX_RETRIES})...`);
-      await sleep(RETRY_WAIT_MS);
+      if (API_KEYS.length > 1) {
+        currentKey = getNextApiKey();
+        console.log(`[MVSep-Helper] Cola ocupada. Rotando a siguiente key...`);
+      } else {
+        console.log(`[MVSep-Helper] Cola ocupada. Esperando ${RETRY_WAIT_MS / 1000}s antes de reintentar (${attempt}/${MAX_RETRIES})...`);
+      }
+      await sleep(API_KEYS.length > 1 ? 5000 : RETRY_WAIT_MS);
       continue;
     }
 
